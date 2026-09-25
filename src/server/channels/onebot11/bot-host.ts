@@ -127,11 +127,17 @@ export class OneBotHost {
           }
         })
         .immediate();
+    const focusOccurredAt = focusKey
+      ? (
+          db.query("SELECT occurred_at_seconds FROM qq_events WHERE event_key=?").get(focusKey) as {
+            occurred_at_seconds: number;
+          } | null
+        )?.occurred_at_seconds
+      : undefined;
     if (
       !initiative &&
-      (!focus ||
-        seconds() - Math.floor(Date.parse(focus.occurredAt) / 1000) >
-          QQ_IMMEDIATE_REPLY_FRESHNESS_SECONDS)
+      (focusOccurredAt === undefined ||
+        seconds() - focusOccurredAt > QQ_IMMEDIATE_REPLY_FRESHNESS_SECONDS)
     ) {
       settleOpportunity();
       return { status: "expired" as const };

@@ -3,9 +3,10 @@ import type { AgentRuntime } from "../../agent/agent-runtime";
 import { sourceAccess } from "../../agent/context-access";
 import type { ConversationHost } from "../../agent/conversation-host";
 import { OutboundDelivery } from "../../conversation/outbound-delivery";
+import { observationRelevant } from "../../conversation/observation-relevance";
 import { WakeScheduler } from "../../conversation/wake-scheduler";
 import type { ConversationEventRepository } from "../../db/conversation-event-repository";
-import { OutboundIntentRepository } from "../../db/outbound-intent-repository";
+import { OutboundIntentRepository, type OutboundTarget } from "../../db/outbound-intent-repository";
 import { readQqBinding } from "../../db/qq-binding-repository";
 import { readQqDispatchSettings } from "../../db/qq-dispatch-repository";
 import { readQqOwnerIdentity } from "../../db/qq-owner-repository";
@@ -151,14 +152,33 @@ export function createOneBotConversationRuntime(options: {
       const conversation = journal.get(intent.conversationId);
       const row = outbox.row(intent.id);
       if (!conversation || !row || journal.row(conversation.id)?.closed_at) return;
-      // A stale plan is never resent. The Agent gets a fresh opportunity to inspect current facts.
+      // Bind recovery to actual input, never to the delivery revision just appended above.
+      // A later unrelated group message cannot change either the intended recipient or freshness.
+      const target = JSON.parse(row.target) as OutboundTarget;
+      const source = journal
+        .eventsAfter(conversation.id, 0, Number.MAX_SAFE_INTEGER)
+        .items.filter((event) =>
+          observationRelevant(event, {
+            topology: conversation.topology,
+            participantIds: [target.participantId ?? null],
+            attentionMembers: target.attentionMembers,
+          }),
+        )
+        .at(-1);
+      if (!source) return;
       wakes.enqueue({
         conversationId: conversation.id,
         cause: row.speech_kind,
-        throughSeq: conversation.lastSeq,
+        throughSeq: source.seq,
         dedupeKey: `stale:${intent.id}`,
         readyAt: new Date().toISOString(),
-        priority: row.speech_kind === "direct_reply" ? 100 : 0,
+        at: source.occurredAt,
+        priority:
+          row.speech_kind === "direct_reply" || row.speech_kind === "follow_up"
+            ? 100
+            : row.speech_kind === "chiming_in"
+              ? 50
+              : 0,
       });
       options.wake();
     },
