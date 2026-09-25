@@ -34,3 +34,10 @@ A neutral BotWorker owns only timer/wake/stop, sweeps even offline, and waits fo
 - Change: eligibility and recipient selection remain host policy; `BotContextSource.prepareEvaluation` projects the cached judgement phase into the configured score prompt. It retains the score rubric/schema, global judgement model and judgement output reserve, and includes the same six-mode memory, knowledge, summaries and current action observations. Only the trusted output protocol changes; score data never inherits the main decision directive.
 - Effect: initial enabled retrieval and subsequent evidence are consistent across main decisions and their score leaf, without running a second selector per recipient. Actual score messages, media rule and JSON schema count against the same phase capacity; source validity is checked immediately before returning the child input.
 - Verification: all six modes in score projections, scope exclusion, per-recipient prompt/model, observation sources, unchanged-view reuse, and revocation before score preparation.
+
+## Child inference source revalidation
+
+- Current: module selection validates its own memory/catalog or knowledge grants, but a parent question may be deleted while the auxiliary capacity probe is awaited and before the child run begins.
+- Change: SQLite query modules accept a host source-check callback and invoke it for parent plus candidate sources before/after child inference. BotContextSource supplies the same owner/scoped source validator used for main and generation views.
+- Effect: deleted input cannot be sent to a newly started selector merely because its candidate document is still authorized. Existing ownership, cursor and transaction behavior is unchanged.
+- Verification: delete the current question during the selector capacity probe for both memory and knowledge; assert no child model call or run is started.

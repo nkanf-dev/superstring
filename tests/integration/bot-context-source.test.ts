@@ -457,6 +457,34 @@ describe("shared Bot context source", () => {
     }
   });
 
+  it("rejects deleted parent input before a selector child starts after an asynchronous capacity probe", async () => {
+    for (const kind of ["memory", "knowledge"] as const) {
+      const h = setup({ mode: kind === "memory" ? "standard" : "off" });
+      h.runtime.memory_retrieval_model_name = "selector-model";
+      if (kind === "memory") h.memory("candidate apples");
+      else {
+        const repo = new KnowledgeRepository(h.db);
+        const doc = repo.importDocument({
+          name: "apples",
+          category_id: "default",
+          original_text: "apples",
+        });
+        repo.replaceGrants(doc.id, doc.revision, [DEFAULT_AGENT_ID]);
+      }
+      const question = h.seed("apples question");
+      h.gateway.loadedContextCapacity = async (model) => {
+        if (model === "selector-model")
+          h.db.query("DELETE FROM qq_observation_text WHERE event_key=?").run(question);
+        return 65536;
+      };
+      await expect(h.source.read(readInput())).rejects.toMatchObject({
+        code: "CONTEXT_SOURCE_INVALID",
+      });
+      expect(h.calls).toHaveLength(0);
+      expect(h.runs.listRuns({ ownerKind: "qq_binding", ownerId: h.binding.id })).toHaveLength(0);
+    }
+  });
+
   it("folds complete batches into an overview while retaining prior facts and question provenance", async () => {
     const h = setup();
     h.gateway.loadedContextCapacity = async () => 6200;

@@ -125,12 +125,14 @@ export class BotContextSource {
       gateway: o.gateway,
       agentRuntime: o.agentRuntime,
       assertCurrent: () => this.assertCurrent(),
+      assertSources: (sources) => this.assertSources(sources),
     });
     this.knowledge = new SqliteKnowledgeModule({
       db: o.db,
       runtime: () => o.runtime,
       gateway: o.gateway,
       agentRuntime: o.agentRuntime,
+      assertSources: (sources) => this.assertSources(sources),
     });
     this.compressor = new ConversationCompressor({
       runtime: o.runtime,
@@ -523,6 +525,7 @@ export class BotContextSource {
         if (memoryFingerprintByScopeKeys(o.orm, o.binding.agentId, keys) !== fingerprint)
           fail("CONTEXT_SOURCE_INVALID", "记忆读取期间目录变化");
       },
+      assertSources: (sources) => this.assertSources(sources),
       cost: (items) =>
         estimateMessages(
           materialOf(items).map((item) => ({
