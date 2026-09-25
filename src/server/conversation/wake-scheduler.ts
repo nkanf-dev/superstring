@@ -5,6 +5,7 @@ export interface WakeSchedulerPolicy {
   renewMs: number;
   retryDelayMs: number;
   maxAttempts: number;
+  globalConcurrency?: number;
 }
 /** Driven by the shared Bot pump: never creates a second global Bot execution slot. */
 export class WakeScheduler {
@@ -23,7 +24,6 @@ export class WakeScheduler {
   peek(cause?: string): WakeSignal | null {
     return this.options.repository.peek({
       at: this.options.now?.() ?? new Date().toISOString(),
-      topology: "direct",
       cause,
     });
   }
@@ -42,7 +42,7 @@ export class WakeScheduler {
       const wake = this.options.repository.claim({
         at: now(),
         leaseMs: policy.leaseMs,
-        topology: "direct",
+        globalConcurrency: policy.globalConcurrency,
         ...filter,
       });
       if (!wake) return false;

@@ -261,6 +261,16 @@ export class ConversationEventRepository {
           : null,
     };
   }
+  /** Internal wake/delivery activity cannot advance an Agent's source observation bound. */
+  sourceThroughSeq(conversationId: string): number {
+    return (
+      this.db
+        .query(
+          "SELECT COALESCE(MAX(seq),0) AS seq FROM conversation_events WHERE conversation_id=? AND kind IN('inbound','outbound','media_revision')",
+        )
+        .get(conversationId) as { seq: number }
+    ).seq;
+  }
   append(
     input: Omit<
       ConversationEvent,
