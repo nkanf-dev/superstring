@@ -6,6 +6,7 @@ import { useSuperstringStore } from "../store";
 import { Field } from "../ui/Field";
 import { HeadingIcon, Icon, NewSessionButtonIcon, NewSessionDialogIcon } from "../ui/icons";
 import { localTime } from "../ui/local-time";
+import { PrimaryNavigation } from "./PrimaryNavigation";
 
 export function Sidebar({ version }: { version: string }) {
   const t = useI18n();
@@ -54,6 +55,7 @@ export function Sidebar({ version }: { version: string }) {
           <strong>superstring</strong>
         </div>
         <div className="version">v{version}</div>
+        <PrimaryNavigation />
         {noActiveAgent && (
           <p className="sidebar-empty">
             {t("当前没有启用的助手，无法新建对话；请到设置中启用或新建助手。")}

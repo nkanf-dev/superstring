@@ -2,9 +2,10 @@ import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from
 import { translateNotice, useI18n } from "../../i18n";
 import { useSuperstringStore } from "../../store";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
-import { HeadingIcon, Icon } from "../../ui/icons";
+import { Icon } from "../../ui/icons";
 import { localTime } from "../../ui/local-time";
 import { ProcessingStatus } from "../../ui/ProcessingStatus";
+import { ConversationHeader } from "../conversations/ConversationHeader";
 import {
   selectedConversation,
   currentSessionId as selectedSessionId,
@@ -141,15 +142,11 @@ export function ChatPage() {
       className="page chat-page"
       style={{ "--composer-space": `${composerHeight + 30}px` } as CSSProperties}
     >
-      <header className="page-header chat-header">
-        <div>
-          <h1>
-            <HeadingIcon name="chat" />
-            <span>{headingText}</span>
-          </h1>
-        </div>
-        {chat.runId && <RunLink runId={chat.runId} />}
-      </header>
+      <ConversationHeader
+        className="chat-header"
+        title={headingText}
+        actions={chat.runId && <RunLink runId={chat.runId} />}
+      />
       <div className="chat-content">
         {messages.length === 0 ? (
           <div className="empty-chat">

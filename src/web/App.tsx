@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { NavigationConfirm } from "./app/NavigationConfirm";
+import { ResponsiveSidebar } from "./app/ResponsiveSidebar";
 import { SettingsHub } from "./app/SettingsHub";
 import { SettingsWorkspace } from "./app/SettingsWorkspace";
 import { Sidebar as SidebarView } from "./app/Sidebar";
@@ -7,8 +8,7 @@ import { StatusBar } from "./app/StatusBar";
 import { AgentSettings } from "./features/agents/AgentSettings";
 import { AppearanceSettings } from "./features/appearance/AppearanceSettings";
 import { ChatPage } from "./features/chat/ChatPage";
-import { ConversationTimeline } from "./features/conversations/ConversationTimeline";
-import { selectedConversation } from "./features/conversations/directory-state";
+import { ConversationShell } from "./features/conversations/ConversationShell";
 import { GeneralSettings } from "./features/general/GeneralSettings";
 import { OperatingModeSettings } from "./features/general/OperatingModeSettings";
 import { KnowledgeSettings } from "./features/knowledge/KnowledgeSettings";
@@ -28,8 +28,6 @@ export function Sidebar() {
 function App() {
   const t = useI18n();
   const status = useSuperstringStore((state) => state.status);
-  const selected = useSuperstringStore(selectedConversation);
-  const botConversation = selected?.channel === "onebot11" ? selected : null;
   const page = useSuperstringStore((state) => state.page);
   const settingsView = useSuperstringStore((state) => state.settingsView);
   const bootstrap = useSuperstringStore((state) => state.bootstrap);
@@ -60,14 +58,10 @@ function App() {
     );
   return (
     <div id="superstring-shell">
-      <Sidebar />
+      <ResponsiveSidebar version={VERSION} />
       <main className="main-area">
         {page === "chat" ? (
-          botConversation ? (
-            <ConversationTimeline key={botConversation.id} conversation={botConversation} />
-          ) : (
-            <ChatPage />
-          )
+          <ConversationShell />
         ) : settingsView === "hub" ? (
           <SettingsHub />
         ) : settingsView === "workspace" ? (
