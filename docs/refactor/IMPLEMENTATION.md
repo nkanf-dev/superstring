@@ -9,8 +9,8 @@ No existing feature may be simplified, downgraded, or omitted. Enhancements are 
 ## Work status
 
 - PR 1: [draft #1](https://github.com/nkanf-dev/superstring/pull/1), source f83ff30 (full suite at ecb2bad; later source-access fix has focused proof); unified runtime, background task migration, lightweight modules, authorized source-bound context inspection and run UI. Original Web/QQ main loops remain until PR 2/3.
-- PR 2: implemented on codex/direct-conversations at e368889; shared Web/private host, journal, durable wake/outbox, SSE and conversation UI.
-- PR 3: in progress on codex/shared-conversations; shared Bot context, scheduling, canonical directory and UI draft convergence.
+- PR 2: [draft #2](https://github.com/nkanf-dev/superstring/pull/2), latest source 628505b; shared Web/private host, journal, durable wake/outbox, SSE and conversation UI. The reload recovery correction has 14 focused frontend tests.
+- PR 3: implemented on codex/shared-conversations at 8fad8f0; shared Bot context, scheduling, module lifecycle/ingestion/query composition, canonical directory and complete UI draft convergence. Draft PR pending creation.
 
 ## Validation
 
@@ -29,3 +29,11 @@ Source e368889: 1,589 integration tests / 93 files / 5,635 assertions passed. Ty
 The production composition test exercises actual createRuntime, Web SSE and OneBot private activation with a synthetic model/transport; two split parts are persisted and confirmed once. Private parity tests cover all six memory modes, original selection model routes, initial knowledge, sticker-only output, inline stickers, cancelled/no-output runs, current source deletion, same-second incoming messages, stale input, offline expiry, CQ mentions and delayed sticker disablement. Confirmed partial speech retains its original expiry; unknown delivery is not retried. The restored v38 database is byte-verified from backup.
 
 Actual in-app browser against isolated Hono/SQLite/shared AgentRuntime: two Web turns, reload, prior history in next context, usage, run details, dialog keyboard/focus and 320px layout; see [integrated browser evidence](../verification/pr2-frontend/integrated-browser.md). Separate real frontend-client SSE/reload proofs verify one POST. Model/transport outputs are synthetic: no live model quality, real OneBot/NapCat delivery, Windows packaging or assistive-technology acceptance is claimed. Group activation remains the old pipeline in this intermediate PR and is removed in PR 3. These local test results are not CI results.
+
+## PR 3 integrated verification
+
+Source 8fad8f0: **1,663 integration tests / 100 files / 6,036 assertions**, **470 frontend tests / 42 files**, TypeScript, Biome and Vite production build passed. Biome warnings and the existing large-bundle advisory remain. Tests remain local; no GitHub CI run is being claimed.
+
+Three independent focused reviews found and fixed shutdown consumption of unstarted output, cross-cause duplicate response, stale recovery refreshing old input age/target, module source inspection disagreement, instance binding in asynchronous observation, reload recovery lockup, compact menu focus, and loaded-directory collapse. The final full integration run also caught a legacy knowledge error-code regression, fixed without changing its assertion.
+
+Old fixed QQ loops have moved to test-only oracles. Their assertions are retained, but new host coverage is separately in private/shared/runtime/composition/delivery tests. See [implemented architecture and parity map](13-实现架构与功能证据.md) and [real browser fixture evidence](../verification/pr3-frontend/README.md). Actual model quality, OneBot/NapCat delivery, Windows packaging and assistive technology still require release acceptance.
