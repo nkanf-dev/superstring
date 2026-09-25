@@ -1,3 +1,12 @@
+import { KnowledgeRepository } from "../../src/server/db/knowledge-repository";
+import {
+  createQqStickerCollection,
+  importQqSticker,
+  setQqStickerEnabled,
+} from "../../src/server/db/qq-sticker-repository";
+import { sourceAccess } from "../../src/server/agent/context-access";
+import { qqStickerSelectionForScheme } from "../../src/server/services/qq-sticker-candidates";
+import { qqStickerUsable } from "../../src/server/services/qq-sticker-contract";
 import { afterEach, describe, expect, it } from "bun:test";
 import { AgentRuntime } from "../../src/server/agent/agent-runtime";
 import type { ModelPort, ModelRequest } from "../../src/server/agent/model-port";
@@ -9,9 +18,13 @@ import { AgentRunRepository } from "../../src/server/db/agent-run-repository";
 import { ConversationEventRepository } from "../../src/server/db/conversation-event-repository";
 import { OutboundIntentRepository } from "../../src/server/db/outbound-intent-repository";
 import { WakeRepository } from "../../src/server/db/wake-repository";
-import { createQqScheme } from "../../src/server/db/qq-scheme-repository";
+import { createQqScheme, updateQqScheme } from "../../src/server/db/qq-scheme-repository";
 import { updateQqSettings } from "../../src/server/db/qq-settings-repository";
-import { DEFAULT_AGENT_ID, ensureDefaults } from "../../src/server/db/repositories";
+import {
+  DEFAULT_AGENT_ID,
+  DEFAULT_USER_ID,
+  ensureDefaults,
+} from "../../src/server/db/repositories";
 import * as schema from "../../src/server/db/schema";
 import { openBusinessDb } from "../../src/server/db/schema-gate";
 import type { ModelGateway } from "../../src/server/llm/model-gateway";
@@ -27,7 +40,8 @@ afterEach(() => {
 });
 const bindingId = "11111111-1111-4111-8111-111111111111",
   nowSeconds = 2_000_000_000;
-function setup(model?: Partial<ModelPort>) {
+function setup(model?: Partial<ModelPort>, options: { stickersAvailable?: boolean } = {}) {
+  const clock = { seconds: nowSeconds };
   const h = openBusinessDb();
   handles.push(h);
   ensureDefaults(h.orm, "chat-model");
@@ -57,7 +71,7 @@ function setup(model?: Partial<ModelPort>) {
   const requests: ModelRequest[] = [];
   const runtime = new AgentRuntime({
     repository: runs,
-    now: () => new Date(nowSeconds * 1000).toISOString(),
+    now: () => new Date(clock.seconds * 1000).toISOString(),
     model: {
       complete: async (req) => {
         requests.push(req);
@@ -77,7 +91,12 @@ function setup(model?: Partial<ModelPort>) {
       throw new Error("DIRECT_GATEWAY_FORBIDDEN");
     },
   } as unknown as ModelGateway;
-  const adapter = new OneBot11Adapter({ orm: h.orm, journal, wakes, nowSeconds: () => nowSeconds });
+  const adapter = new OneBot11Adapter({
+    orm: h.orm,
+    journal,
+    wakes,
+    nowSeconds: () => clock.seconds,
+  });
   const host = new OneBotPrivateHost({
     orm: h.orm,
     journal,
@@ -85,9 +104,9 @@ function setup(model?: Partial<ModelPort>) {
     outbox,
     gateway,
     agentRuntime: runtime,
-    stickers: { counts: ["confirmed"], isAvailable: () => false },
+    stickers: { counts: ["confirmed"], isAvailable: () => options.stickersAvailable ?? false },
     policy: () => ({ maxSteps: 12, deliveryTtlSeconds: 600, retentionDays: 14 }),
-    now: () => new Date(nowSeconds * 1000).toISOString(),
+    now: () => new Date(clock.seconds * 1000).toISOString(),
   });
   const receive = (id: string, text = "hello") =>
     recordInbound(
@@ -97,7 +116,7 @@ function setup(model?: Partial<ModelPort>) {
           post_type: "message",
           message_type: "private",
           sub_type: "friend",
-          time: nowSeconds,
+          time: clock.seconds,
           self_id: 10001,
           user_id: 20002,
           message_id: id,
@@ -108,7 +127,21 @@ function setup(model?: Partial<ModelPort>) {
       ),
       { accountId: "10001", conversationIngress: adapter },
     );
-  return { ...h, journal, wakes, outbox, runs, runtime, requests, adapter, host, receive, scheme };
+  return {
+    ...h,
+    clock,
+    gateway,
+    journal,
+    wakes,
+    outbox,
+    runs,
+    runtime,
+    requests,
+    adapter,
+    host,
+    receive,
+    scheme,
+  };
 }
 describe("OneBot private common host", () => {
   it("atomically journals intake and wake, runs decide/generate, commits intent before any send and preserves multipart", async () => {
@@ -287,5 +320,450 @@ describe("durable per-part delivery", () => {
     ).toMatchObject([{ text: "first" }]);
     await delivery.runOnce();
     expect(h.db.query("SELECT COUNT(*) AS n FROM qq_send_log").get()).toEqual({ n: 1 });
+  });
+});
+
+const finalGenerate =
+  '{"kind":"final","outputs":[{"kind":"generate","targetId":"20002","instructions":"answer"}]}';
+const stamp = (seconds = nowSeconds) => new Date(seconds * 1000).toISOString();
+async function activate(h: ReturnType<typeof setup>) {
+  const wake = h.wakes.claim({ at: stamp(h.clock.seconds), leaseMs: 120000 })!;
+  return h.host.activate(wake, new AbortController().signal);
+}
+function addSticker(h: ReturnType<typeof setup>) {
+  const collection = createQqStickerCollection(h.orm, { name: "test" });
+  const id = crypto.randomUUID();
+  importQqSticker(h.orm, {
+    id,
+    copy: { fileName: `${id}.png`, byteSize: 64, mediaType: "image" },
+    name: "wave",
+    width: 64,
+    height: 64,
+    collectionIds: [collection.id],
+  });
+  setQqStickerEnabled(h.orm, id, true);
+  updateQqScheme(h.orm, h.scheme.id, {
+    name: h.scheme.name,
+    stickerCollections: [collection.id],
+    expectedRevision: h.scheme.revision,
+  });
+  return id;
+}
+function setMemoryMode(h: ReturnType<typeof setup>, mode: string) {
+  const row = h.db.query("SELECT p5_config FROM agents WHERE id=?").get(DEFAULT_AGENT_ID) as {
+    p5_config: string;
+  };
+  const cfg = JSON.parse(row.p5_config);
+  cfg.retrieval_mode = mode;
+  h.db
+    .query("UPDATE agents SET p5_config=?,memory_retrieval_model_name='memory-selector' WHERE id=?")
+    .run(JSON.stringify(cfg), DEFAULT_AGENT_ID);
+}
+function addMemory(h: ReturnType<typeof setup>, body = "apples are green") {
+  const id = crypto.randomUUID();
+  h.orm
+    .insert(schema.memoryEntries)
+    .values({
+      id,
+      agentId: DEFAULT_AGENT_ID,
+      userId: DEFAULT_USER_ID,
+      name: "apples",
+      summary: "apples",
+      tags: '["apples"]',
+      kinds: '["semantic"]',
+      body,
+      scope: "reality_user",
+      scopeKey: JSON.stringify(["qq", "10001", "private", "20002", DEFAULT_AGENT_ID]),
+      configSnapshot: "{}",
+      createdAt: stamp(),
+    })
+    .run();
+  h.receive("900", "apples");
+  const event = h.db.query("SELECT event_key FROM qq_events WHERE message_id=?").get("900") as {
+    event_key: string;
+  };
+  h.orm
+    .insert(schema.qqMemorySources)
+    .values({
+      memoryId: id,
+      eventKey: event.event_key,
+      scopeKey: JSON.stringify(["qq", "10001", "private", "20002", DEFAULT_AGENT_ID]),
+      conversationKey: JSON.stringify(["10001", "private", "20002"]),
+      messageId: "900",
+      occurredAtSeconds: nowSeconds,
+      speakerKind: "member",
+      speakerId: "20002",
+    })
+    .run();
+  return id;
+}
+describe("private feature preservation", () => {
+  it("preserves a sticker-only generated reply and inherited source references", async () => {
+    let count = 0;
+    const h = setup(
+      {
+        complete: async () => (++count === 1 ? finalGenerate : "1"),
+        async *streamText() {
+          yield "";
+        },
+      },
+      { stickersAvailable: true },
+    );
+    const id = addSticker(h);
+    setMemoryMode(h, "full_body");
+    const memoryId = addMemory(h);
+    h.receive("1");
+    const result = await activate(h);
+    expect(result.status).toBe("completed");
+    expect(h.outbox.parts(h.outbox.list({})[0]!.id).map((p) => JSON.parse(p.payload!))).toEqual([
+      { stickerId: id },
+    ]);
+    expect(
+      h.db.query("SELECT status FROM agent_runs WHERE spec_id='onebot.sticker.select'").get(),
+    ).toEqual({ status: "completed" });
+    const snapshot = h.db
+      .query(
+        "SELECT c.source_refs FROM context_snapshots c JOIN agent_steps s ON s.step_id=c.step_id JOIN agent_runs r ON r.run_id=s.run_id WHERE r.spec_id='onebot.sticker.select'",
+      )
+      .get() as { source_refs: string };
+    expect(JSON.parse(snapshot.source_refs).map((r: { kind: string }) => r.kind)).toContain(
+      "qq_observation",
+    );
+    expect(JSON.parse(snapshot.source_refs).some((r: { id: string }) => r.id === memoryId)).toBe(
+      true,
+    );
+    h.db.query("DELETE FROM memory_entries WHERE id=?").run(memoryId);
+    expect(
+      h.db
+        .query(
+          "SELECT c.protected_messages FROM context_snapshots c JOIN agent_steps s ON s.step_id=c.step_id JOIN agent_runs r ON r.run_id=s.run_id WHERE r.spec_id='onebot.sticker.select'",
+        )
+        .get(),
+    ).toEqual({ protected_messages: null });
+  });
+  it("blank reply without usable sticker completes no_output without an orphan output id", async () => {
+    const h = setup({
+      async *streamText() {
+        yield "";
+      },
+    });
+    h.receive("1");
+    const result = await activate(h);
+    expect(result.status).toBe("no_output");
+    expect(h.outbox.list({})).toEqual([]);
+    expect(h.requests).toHaveLength(1);
+    expect(h.db.query("SELECT status FROM wake_signals").get()).toEqual({ status: "no_output" });
+  });
+  it("honors explicit inline sticker id and never substitutes an automatic choice", async () => {
+    let id = "",
+      calls = 0;
+    const h = setup(
+      {
+        complete: async () => {
+          calls++;
+          return JSON.stringify({
+            kind: "final",
+            outputs: [{ kind: "inline", targetId: "20002", text: "", stickerIds: [id] }],
+          });
+        },
+      },
+      { stickersAvailable: true },
+    );
+    id = addSticker(h);
+    h.receive("1");
+    await activate(h);
+    expect(calls).toBe(1);
+    expect(h.outbox.parts(h.outbox.list({})[0]!.id).map((p) => JSON.parse(p.payload!))).toEqual([
+      { stickerId: id },
+    ]);
+  });
+  for (const mode of ["off", "conservative", "standard", "broad", "full_catalog", "full_body"]) {
+    it(`preserves initial memory ${mode} mode and selector routing`, async () => {
+      let id = "",
+        selectors = 0;
+      let mainContext = "";
+      const h = setup({
+        complete: async (req) => {
+          if ((req.responseSchema?.properties as Record<string, unknown> | undefined)?.ids) {
+            selectors++;
+            expect(req.model).toBe("memory-selector");
+            return JSON.stringify({ ids: [id] });
+          }
+          mainContext = JSON.stringify(req.messages);
+          return '{"kind":"none"}';
+        },
+      });
+      setMemoryMode(h, mode);
+      id = addMemory(h);
+      h.receive("1", "apples");
+      await activate(h);
+      expect(mainContext.includes("apples are green")).toBe(mode !== "off");
+      expect(selectors > 0).toBe(!["off", "full_body"].includes(mode));
+    });
+  }
+  it("source deletion while generating blocks commit and preserves source cursor", async () => {
+    let remove = () => {};
+    const h = setup({
+      async *streamText() {
+        remove();
+        yield "uses deleted memory";
+      },
+    });
+    setMemoryMode(h, "full_body");
+    const id = addMemory(h);
+    remove = () => {
+      h.db.query("DELETE FROM memory_entries WHERE id=?").run(id);
+    };
+    h.receive("1", "apples");
+    await expect(activate(h)).rejects.toThrow("CONTEXT_SOURCE_INVALID");
+    expect(h.outbox.list({})).toEqual([]);
+    expect(h.journal.ensureOneBot(bindingId)!.consumedSeq).toBe(0);
+    expect(
+      h.db
+        .query(
+          "SELECT COUNT(*) AS n FROM context_snapshots WHERE protected_messages IS NOT NULL AND source_refs LIKE ?",
+        )
+        .get(`%${id}%`),
+    ).toEqual({ n: 0 });
+  });
+  it("expired direct wake never calls model and never consumes a different idle cause", async () => {
+    const h = setup();
+    h.receive("1");
+    const c = h.journal.ensureOneBot(bindingId)!;
+    h.wakes.enqueue({
+      conversationId: c.id,
+      cause: "idle_topic",
+      throughSeq: c.lastSeq,
+      dedupeKey: "idle",
+      readyAt: stamp(nowSeconds + 601),
+      at: stamp(),
+      priority: 0,
+    });
+    h.clock.seconds += 601;
+    const result = await activate(h);
+    expect(result.status).toBe("expired");
+    expect(h.requests).toEqual([]);
+    expect(h.wakes.peek({ at: stamp(h.clock.seconds) })?.cause).toBe("idle_topic");
+  });
+  it("stop is terminal and does not claim a new wake", async () => {
+    const h = setup();
+    h.receive("1");
+    let calls = 0;
+    const scheduler = new WakeScheduler({
+      repository: h.wakes,
+      policy: () => ({ leaseMs: 1000, renewMs: 200, retryDelayMs: 100, maxAttempts: 3 }),
+      activate: async () => {
+        calls++;
+      },
+      now: () => stamp(),
+    });
+    scheduler.stop();
+    expect(await scheduler.runOnce()).toBe(false);
+    expect(calls).toBe(0);
+    expect(h.wakes.peek({ at: stamp() })?.status).toBe("pending");
+  });
+  it("offline housekeeping removes expired pending payloads and redacts partial snapshots", async () => {
+    const h = setup();
+    h.receive("1");
+    await activate(h);
+    const intent = h.outbox.list({})[0]!;
+    const first = h.outbox.claimPart(intent.id, stamp())!;
+    h.outbox.settlePart(first.part.id, { status: "confirmed", messageId: "first" }, stamp());
+    const speech = h.outbox.partialSpeechSince(intent.conversationId, {
+      sinceSeconds: nowSeconds - 1,
+      limit: 10,
+      at: stamp(),
+    })[0]!;
+    expect(
+      sourceAccess(
+        h.db,
+        speech.sources[0]!,
+        {
+          kind: "conversation",
+          id: intent.conversationId,
+          userId: DEFAULT_USER_ID,
+          agentId: DEFAULT_AGENT_ID,
+        },
+        { userId: DEFAULT_USER_ID },
+        stamp(),
+      ),
+    ).toBe("available");
+    await h.runtime.completeLeaf(
+      { id: "fixture.partial" },
+      {
+        owner: {
+          kind: "conversation",
+          id: intent.conversationId,
+          userId: DEFAULT_USER_ID,
+          agentId: DEFAULT_AGENT_ID,
+        },
+        messages: [{ role: "user", content: speech.text }],
+        sources: speech.sources,
+      },
+    );
+    h.outbox.purgeExpired(stamp(nowSeconds + 15 * 86400));
+    expect(h.outbox.get(intent.id)!.parts.map((p) => p.status)).toEqual(["confirmed", "stale"]);
+    expect(h.outbox.parts(intent.id).every((p) => p.payload === null)).toBe(true);
+    expect(
+      h.db
+        .query(
+          "SELECT c.protected_messages FROM context_snapshots c JOIN agent_steps s ON s.step_id=c.step_id JOIN agent_runs r ON r.run_id=s.run_id WHERE r.spec_id='fixture.partial'",
+        )
+        .get(),
+    ).toEqual({ protected_messages: null });
+  });
+  it("delayed disabled sticker is skipped while confirmed text and CQ mention survive", async () => {
+    let count = 0;
+    const h = setup(
+      {
+        complete: async () => (++count === 1 ? finalGenerate : "1"),
+        async *streamText() {
+          yield "[CQ:at,qq=20002] hello";
+        },
+      },
+      { stickersAvailable: true },
+    );
+    const stickerId = addSticker(h);
+    h.receive("1");
+    await activate(h);
+    const intent = h.outbox.list({})[0]!;
+    setQqStickerEnabled(h.orm, stickerId, false);
+    const requests: unknown[] = [];
+    const delivery = new OutboundDelivery({
+      orm: h.orm,
+      repository: h.outbox,
+      journal: h.journal,
+      stickerFile: () => "base64://file",
+      authorize: () => true,
+      now: () => stamp(),
+      stickerAvailable: (id, target, at) => {
+        const selected = qqStickerSelectionForScheme(h.orm, {
+          schemeId: target.schemeId!,
+          scope: {
+            kind: "qq",
+            accountId: target.accountId,
+            conversationKind: target.conversationKind,
+            peerId: target.peerId,
+            agentId: target.agentId,
+          },
+          counts: ["confirmed"],
+          nowSeconds: Date.parse(at) / 1000,
+          isAvailable: () => true,
+        });
+        return selected.candidates.some(
+          (c) =>
+            c.id === id &&
+            qqStickerUsable(c, { minRepeatSeconds: selected.minRepeatSeconds }).kind === "usable",
+        );
+      },
+      port: {
+        async send(request) {
+          requests.push(request);
+          return { kind: "confirmed", messageId: "confirmed" };
+        },
+      },
+    });
+    await delivery.deliver(intent.id);
+    expect(requests).toEqual([
+      {
+        kind: "private",
+        peerId: "20002",
+        message: [
+          { type: "at", data: { qq: "20002" } },
+          { type: "text", data: { text: " hello" } },
+        ],
+      },
+    ]);
+    expect(h.outbox.get(intent.id)!.parts.map((p) => p.status)).toEqual(["confirmed", "not_sent"]);
+  });
+});
+
+describe("private initiative and cancellation", () => {
+  it("uses the global judgement model with memory and granted knowledge in the original score prompt", async () => {
+    let stage = 0;
+    let judgement: ModelRequest | undefined;
+    const h = setup({
+      complete: async (req) => {
+        if ((req.responseSchema?.properties as Record<string, unknown> | undefined)?.score) {
+          judgement = req;
+          return '{"score":0}';
+        }
+        return ++stage === 1
+          ? '{"kind":"invoke","name":"speech.evaluate","arguments":{}}'
+          : '{"kind":"none"}';
+      },
+    });
+    setMemoryMode(h, "off");
+    addMemory(h);
+    const repo = new KnowledgeRepository(h.db);
+    const doc = repo.importDocument({
+      name: "apples manual",
+      category_id: "default",
+      original_text: "apples knowledge line",
+    });
+    repo.replaceGrants(doc.id, doc.revision, [DEFAULT_AGENT_ID]);
+    updateQqSettings(h.orm, { judgementModelName: "global-judge", expectedRevision: 2 });
+    h.receive("1", "apples");
+    h.db.exec("UPDATE wake_signals SET status='no_output'");
+    h.clock.seconds += 16 * 60;
+    const c = h.journal.ensureOneBot(bindingId)!;
+    h.wakes.enqueue({
+      conversationId: c.id,
+      cause: "idle_topic",
+      throughSeq: c.lastSeq,
+      dedupeKey: "idle-eval",
+      readyAt: stamp(h.clock.seconds),
+      at: stamp(h.clock.seconds),
+      priority: 0,
+    });
+    const result = await activate(h);
+    expect(result.status).toBe("no_output");
+    expect(judgement?.model).toBe("global-judge");
+    const text = JSON.stringify(judgement?.messages);
+    expect(text).toContain("apples are green");
+    expect(text).toContain("apples knowledge line");
+    expect(h.outbox.list({})).toEqual([]);
+    const sources = h.db
+      .query(
+        "SELECT c.source_refs FROM context_snapshots c JOIN agent_steps s ON s.step_id=c.step_id JOIN agent_runs r ON r.run_id=s.run_id WHERE r.spec_id='onebot.initiative.evaluate'",
+      )
+      .get() as { source_refs: string };
+    expect(JSON.parse(sources.source_refs).map((r: { kind: string }) => r.kind)).toEqual(
+      expect.arrayContaining(["memory", "knowledge_document", "knowledge_grant", "qq_observation"]),
+    );
+  });
+  it("cancellation during generation records a cancelled run without advancing source cursor", async () => {
+    const controller = new AbortController();
+    const h = setup({
+      async *streamText(req) {
+        controller.abort(new DOMException("cancelled", "AbortError"));
+        req.signal?.throwIfAborted();
+        yield "not visible";
+      },
+    });
+    h.receive("1");
+    const wake = h.wakes.claim({ at: stamp(), leaseMs: 120000 })!;
+    await expect(h.host.activate(wake, controller.signal)).rejects.toThrow();
+    expect(h.outbox.list({})).toEqual([]);
+    expect(h.journal.ensureOneBot(bindingId)!.consumedSeq).toBe(0);
+    expect(
+      h.db.query("SELECT status FROM agent_runs WHERE spec_id='onebot.private.main'").get(),
+    ).toEqual({ status: "cancelled" });
+  });
+  it("retention during an in-flight send erases payload but still accepts the eventual receipt", async () => {
+    const h = setup();
+    h.receive("1");
+    await activate(h);
+    const intent = h.outbox.list({})[0]!;
+    const first = h.outbox.claimPart(intent.id, stamp())!;
+    h.outbox.purgeExpired(stamp(nowSeconds + 15 * 86400));
+    expect(h.outbox.parts(intent.id).every((p) => p.payload === null)).toBe(true);
+    expect(h.outbox.get(intent.id)!.parts.map((p) => p.status)).toEqual(["sending", "stale"]);
+    h.outbox.settlePart(
+      first.part.id,
+      { status: "confirmed", messageId: "late-receipt" },
+      stamp(nowSeconds + 15 * 86400),
+    );
+    expect(h.outbox.get(intent.id)!.parts[0]!.platformMessageId).toBe("late-receipt");
   });
 });

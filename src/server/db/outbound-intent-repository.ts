@@ -221,9 +221,11 @@ export class OutboundIntentRepository {
         ? "failed"
         : parts.every((p) => p.status === "confirmed")
           ? "confirmed"
-          : parts.some((p) => p.status === "stale")
-            ? "stale"
-            : "delivering";
+          : parts.some((p) => p.status === "sending")
+            ? "delivering"
+            : parts.some((p) => p.status === "stale")
+              ? "stale"
+              : "delivering";
     this.db.query("UPDATE outbound_intents SET status=? WHERE id=?").run(status, id);
   }
   stale(id: string, at: string): boolean {
@@ -311,7 +313,7 @@ export class OutboundIntentRepository {
       for (const row of rows) {
         this.db
           .query(
-            "UPDATE outbound_parts SET status=CASE WHEN status='sending' THEN 'unknown' ELSE 'stale' END,finished_at=? WHERE intent_id=? AND status IN('planned','sending')",
+            "UPDATE outbound_parts SET status='stale',finished_at=? WHERE intent_id=? AND status='planned'",
           )
           .run(at, row.id);
         this.refreshStatus(row.id);
