@@ -3,6 +3,8 @@
 import path from "node:path";
 import type { Hono } from "hono";
 import { createApp } from "./app";
+import { createAgentRuntime, type AgentRuntime } from "./agent/agent-runtime";
+import { AgentRunRepository } from "./db/agent-run-repository";
 import { browserStateSecret } from "./browser-state";
 import type { BusinessDbHandle } from "./db/connection";
 import { resolveModelProviderRoute } from "./db/model-provider-repository";
@@ -67,6 +69,7 @@ export interface SuperstringRuntime {
   business: BusinessDbHandle;
   gateway: ModelGateway;
   memoryService: MemoryService;
+  agentRuntime: AgentRuntime;
   qqRuntime: QqRuntime;
   qqIntake: QqIntakeRuntime;
   start(): void;
@@ -86,6 +89,7 @@ export function createRuntime(options: RuntimeOptions = {}): SuperstringRuntime 
     });
   let gateway: ModelGateway;
   let memoryService: MemoryService;
+  let agentRuntime: AgentRuntime;
   let qqRuntime: QqRuntime;
   let qqIntake: QqIntakeRuntime;
   let app: Hono;
@@ -110,9 +114,12 @@ export function createRuntime(options: RuntimeOptions = {}): SuperstringRuntime 
       options.gateway === undefined
         ? createLmStudioVisionClient(resolveLmStudioConfig(), fetch, { externalModel })
         : createLmStudioVisionClient(gateway.config, fetch, { externalModel });
+    const runRepository = new AgentRunRepository(business.db);
+    runRepository.expireContexts();
+    agentRuntime = createAgentRuntime({ gateway, vision: visionClient, repository: runRepository });
     memoryService =
-      options.memoryService ?? new MemoryService({ orm: business.orm, db: business.db, gateway });
-    knowledgeOrganizer = new KnowledgeOrganizer({ db: business.db, gateway });
+      options.memoryService ?? new MemoryService({ orm: business.orm, db: business.db, gateway, agentRuntime });
+    knowledgeOrganizer = new KnowledgeOrganizer({ db: business.db, gateway, agentRuntime });
     const stickerStore = new QqStickerStore({
       directory: options.qqStickerDirectory ?? DEFAULT_QQ_STICKER_DIRECTORY,
     });
@@ -137,6 +144,7 @@ export function createRuntime(options: RuntimeOptions = {}): SuperstringRuntime 
           // 一轮里同一个模型的容量只探一次（2026-09-25）：判断、写回复、选图、复核各问一次，
           // 本地模型每次都是一条 HTTP。缓存只包住 QQ 这两条链，网页那侧保持原样。
           gateway: withCapacityCache(gateway),
+          agentRuntime,
           store: stickerStore,
           sender,
         }),
@@ -144,6 +152,7 @@ export function createRuntime(options: RuntimeOptions = {}): SuperstringRuntime 
         immediate: qqImmediateRunner({
           orm: business.orm,
           gateway: withCapacityCache(gateway),
+          agentRuntime,
           store: stickerStore,
           sender,
         }),
@@ -157,7 +166,7 @@ export function createRuntime(options: RuntimeOptions = {}): SuperstringRuntime 
         requestTimeoutMs: QQ_REQUEST_TIMEOUT_MS,
         // The media seam. The vision client is the same one the sticker annotation uses; giving
         // it to the intake runtime is what turns "media is recorded" into "media is understood".
-        media: { vision: visionClient },
+        media: { vision: visionClient, agentRuntime },
         // 「被 @ 了别等轮询」（2026-09-25）：入站路径记下一条冲着她来的消息就叫醒宿主跑一轮。
         onAddressedMessage: () => qqRuntime.wake(),
       });
@@ -165,6 +174,7 @@ export function createRuntime(options: RuntimeOptions = {}): SuperstringRuntime 
       business,
       gateway,
       vision: visionClient,
+      agentRuntime,
       qqTransportKeyPath: options.qqTransportKeyPath,
       modelProviderKeyPath: options.modelProviderKeyPath,
       // The page reads the transport's own state; nothing is inferred from a saved endpoint.
@@ -178,6 +188,7 @@ export function createRuntime(options: RuntimeOptions = {}): SuperstringRuntime 
     throw error;
   }
 
+  let contextSweep: ReturnType<typeof setInterval> | null = null;
   let started = false;
   let stopped = false;
   return {
@@ -185,11 +196,14 @@ export function createRuntime(options: RuntimeOptions = {}): SuperstringRuntime 
     business,
     gateway,
     memoryService,
+    agentRuntime,
     qqRuntime,
     qqIntake,
     start(): void {
       if (started || stopped) return;
       started = true;
+      contextSweep = setInterval(() => new AgentRunRepository(business.db).expireContexts(), 60_000);
+      contextSweep.unref();
       memoryService.start();
       knowledgeOrganizer.start();
       qqRuntime.start();
@@ -200,6 +214,7 @@ export function createRuntime(options: RuntimeOptions = {}): SuperstringRuntime 
     async stop(): Promise<void> {
       if (stopped) return;
       stopped = true;
+      if (contextSweep !== null) clearInterval(contextSweep);
       qqIntake.stop();
       if (started)
         await Promise.all([memoryService.stop(), knowledgeOrganizer.stop(), qqRuntime.stop()]);

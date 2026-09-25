@@ -1,4 +1,7 @@
 import { Hono } from "hono";
+import { createAgentRuntime, type AgentRuntime } from "./agent/agent-runtime";
+import { AgentRunRepository } from "./db/agent-run-repository";
+import { runRoutes } from "./api/runs";
 import type { BrowserStateConfig } from "../shared/contracts";
 import { agentRoutes } from "./api/agents";
 import { desktopRoutes } from "./api/desktop";
@@ -13,7 +16,7 @@ import type { BusinessDbHandle } from "./db/connection";
 import { createLmStudioClient, type ModelGateway } from "./llm/model-gateway";
 import { createLmStudioVisionClient } from "./llm/vision-client";
 import {
-  QQ_STICKER_ANNOTATION_RESPONSE_SCHEMA,
+  createQqStickerAnnotator,
   type QqStickerAnnotator,
 } from "./services/qq-sticker-annotation";
 
@@ -22,6 +25,7 @@ export interface CreateAppOptions {
   business?: BusinessDbHandle;
   /** Override the LM Studio gateway (tests inject a fake). */
   gateway?: ModelGateway;
+  agentRuntime?: AgentRuntime;
   /** Stable per-installation browser-state secret, never logged or persisted client-side. */
   browserStateSecret?: string;
   /**
@@ -71,6 +75,9 @@ export function createApp(opts: CreateAppOptions): Hono {
     // image travels to the model service (U05's decision, 2026-09-24). The sticker annotation is
     // its first caller; the media reader's adapter is the next one.
     const vision = opts.vision ?? createLmStudioVisionClient(gateway.config);
+    const runRepository = new AgentRunRepository(business.db);
+    const agentRuntime = opts.agentRuntime ?? createAgentRuntime({ gateway, vision, repository: runRepository });
+    app.route("/v2/runs", runRoutes(business.db, runRepository));
     app.route(
       "/qq",
       qqRoutes(business.orm, {
@@ -80,15 +87,14 @@ export function createApp(opts: CreateAppOptions): Hono {
         gateway,
         annotator:
           opts.qqStickerAnnotator ??
-          ((input) =>
-            vision.annotate({ ...input, responseSchema: QQ_STICKER_ANNOTATION_RESPONSE_SCHEMA })),
+          createQqStickerAnnotator(agentRuntime),
       }),
     );
     app.route("/", desktopRoutes(business));
     app.route("/", memoryRoutes(business.orm));
     app.route("/", knowledgeRoutes(business));
     app.route("/", healthRoutes(business.db, gateway));
-    app.route("/", sessionRoutes(business.orm, business.db, gateway.config.model, gateway));
+    app.route("/", sessionRoutes(business.orm, business.db, gateway.config.model, gateway, agentRuntime));
   }
 
   return app;
