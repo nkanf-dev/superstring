@@ -208,6 +208,42 @@ export function sourceAccess(
           ? "available"
           : "revoked";
     }
+    case "outbound_intent": {
+      const row = db
+        .query(`SELECT i.target,i.expires_at,i.conversation_id,c.user_id,c.closed_at
+        FROM outbound_intents i JOIN conversations c ON c.id=i.conversation_id WHERE i.id=?`)
+        .get(source.id) as {
+        target: string;
+        expires_at: string;
+        conversation_id: string;
+        user_id: string;
+        closed_at: string | null;
+      } | null;
+      if (!row || row.user_id !== principal.userId || row.closed_at) return "revoked";
+      if (Date.parse(row.expires_at) <= Date.parse(now)) return "expired";
+      const target = JSON.parse(row.target) as { agentId: string; bindingId: string };
+      if (
+        (owner.agentId && owner.agentId !== target.agentId) ||
+        (owner.kind === "conversation" && owner.id !== row.conversation_id) ||
+        (owner.kind === "qq_binding" && owner.id !== target.bindingId) ||
+        !db
+          .query("SELECT 1 FROM qq_bindings WHERE id=? AND agent_id=?")
+          .get(target.bindingId, target.agentId)
+      )
+        return "revoked";
+      const parts = db
+        .query(
+          "SELECT payload FROM outbound_parts WHERE intent_id=? AND kind='text' AND status='confirmed' ORDER BY ordinal",
+        )
+        .all(source.id) as { payload: string | null }[];
+      if (!parts.length || parts.some((part) => part.payload === null)) return "expired";
+      const body = parts
+        .map((part) => (JSON.parse(part.payload as string) as { text: string }).text)
+        .join("\n");
+      return createHash("sha256").update(body).digest("hex") === source.revision
+        ? "available"
+        : "revoked";
+    }
     case "qq_sticker":
       return principal.userId === DEFAULT_USER_ID &&
         db.query("SELECT 1 FROM qq_sticker_assets WHERE id=?").get(source.id) !== null

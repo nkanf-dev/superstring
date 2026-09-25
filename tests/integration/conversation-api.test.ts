@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { createHash } from "node:crypto";
 import { Hono } from "hono";
+import { sourceAccess } from "../../src/server/agent/context-access";
 import { conversationRoutes } from "../../src/server/api/conversations";
 import { deliveryRoutes } from "../../src/server/api/deliveries";
 import { handleError } from "../../src/server/api/error-handler";
@@ -174,7 +176,7 @@ describe("canonical conversation read APIs", () => {
       sourceThroughSeq: 0,
       createdAt: now,
       deliverBy: now,
-      expiresAt: now,
+      expiresAt: "2099-01-01T00:00:00.000Z",
       parts: [{ kind: "text", text: "private outgoing body" }],
     });
     const response = await app.request(`/v2/deliveries/${intent.id}`);
@@ -184,7 +186,27 @@ describe("canonical conversation read APIs", () => {
     expect(
       (await (await app.request(`/v2/deliveries?conversationId=${conversation.id}`)).json()).items,
     ).toHaveLength(1);
+    const part = outbox.claimPart(intent.id, now);
+    if (!part) throw new Error("Missing planned part");
+    outbox.settlePart(part.part.id, { status: "confirmed", messageId: "receipt" }, now);
+    const source = {
+      kind: "outbound_intent",
+      id: intent.id,
+      revision: createHash("sha256").update("private outgoing body").digest("hex"),
+    };
+    const owner = {
+      kind: "conversation",
+      id: conversation.id,
+      userId: DEFAULT_USER_ID,
+      agentId: DEFAULT_AGENT_ID,
+    };
+    expect(sourceAccess(business.db, source, owner, { userId: DEFAULT_USER_ID }, now)).toBe(
+      "available",
+    );
     business.db.query("DELETE FROM qq_bindings WHERE id=?").run(bindingId);
+    expect(sourceAccess(business.db, source, owner, { userId: DEFAULT_USER_ID }, now)).toBe(
+      "revoked",
+    );
     expect((await app.request(`/v2/deliveries/${intent.id}`)).status).toBe(404);
   });
 });
