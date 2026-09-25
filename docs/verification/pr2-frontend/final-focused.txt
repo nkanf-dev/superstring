@@ -1,0 +1,13 @@
+$ vitest run --config vitest.config.ts "tests/web/conversation-v2.test.tsx" tests/web/frontend-flows.test.tsx tests/web/session-menu.test.tsx
+
+ RUN  v5.0.0 /Users/nkanf/clones/superstring-worktrees/pr2-conversation-ui
+
+
+ Test Files  3 passed (3)
+      Tests  29 passed (29)
+   Start at  03:27:02
+   Duration  5.44s (environment 33%, tests 30%, transform 20%, import 18%)
+
+    Isolate  3 workers spawned · ~732ms startup each (spawn + environment, per file)
+             at least ~1.46s faster with isolate: false — reuses workers across files instead of one per file
+

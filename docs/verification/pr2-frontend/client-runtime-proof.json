@@ -1,0 +1,37 @@
+{
+  "sessionId": "330f0480-72b2-40a6-a474-c25204f0826e",
+  "conversationId": "5ff41cc8-0450-44ae-8c73-815a0d31edec",
+  "phase": "idle",
+  "error": null,
+  "lastMessage": {
+    "id": "b5b0ce45-a81e-49dc-abbd-776caf7aaa00",
+    "role": "assistant",
+    "content": "这是来自真实共享 AgentRuntime 的合成流式回复。会话、运行和消息已经使用真实 SQLite 存储。",
+    "status": "completed",
+    "errorCode": null,
+    "createdAt": "2026-09-25T19:21:50.463000Z",
+    "completedAt": "2026-09-25T19:21:51.529000Z"
+  },
+  "runId": "d540a476-122e-47c7-8931-6ab02b4b0eb9",
+  "runStatus": "completed",
+  "steps": [
+    {
+      "phase": "next",
+      "status": "completed"
+    },
+    {
+      "phase": "generate",
+      "status": "completed"
+    }
+  ],
+  "contextUsageModel": "local-fixture",
+  "contextComponents": {
+    "instructions": 79,
+    "recent_history": 414,
+    "summaries": 0,
+    "long_term_memory": 0,
+    "knowledge": 0,
+    "current_question": 107,
+    "protocol": 420
+  }
+}

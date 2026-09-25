@@ -1,0 +1,15 @@
+{
+  "sessionId": "885c0a9f-f780-4c24-98e8-3d80fc109cf0",
+  "requestId": "7980bf0c-ce44-4319-a08a-29aea3f79cb8",
+  "before": {
+    "phase": "reconciling",
+    "runId": "6e0c6683-2345-4aec-b3c6-bec82592fbfb",
+    "requestId": "7980bf0c-ce44-4319-a08a-29aea3f79cb8"
+  },
+  "after": {
+    "phase": "idle",
+    "error": null,
+    "messageStatus": "completed"
+  },
+  "chatPosts": 1
+}
