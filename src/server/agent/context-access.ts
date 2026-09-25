@@ -10,6 +10,7 @@ import type { SourceRef } from "../../shared/contracts/evidence";
 import type { AgentRunRepository } from "../db/agent-run-repository";
 import { memoryRevision } from "../db/memory-content-repository";
 import { DEFAULT_USER_ID } from "../db/repositories";
+import type { ModuleSourceResolver } from "../modules/composition";
 
 export interface ContextPrincipal {
   userId: string;
@@ -261,6 +262,7 @@ export function inspectContext(
   handle: ContextHandle,
   principal: ContextPrincipal,
   now = new Date().toISOString(),
+  resolveSource?: ModuleSourceResolver,
 ): InspectedContext | null {
   const run = repository.getRun(handle.runId);
   if (!run || !canReadRun(db, run.owner, principal)) return null;
@@ -268,8 +270,10 @@ export function inspectContext(
   if (!stored) return null;
   let status = stored.status;
   if (status === "exact") {
-    const states = stored.sources.map((source) =>
-      sourceAccess(db, source, run.owner, principal, now),
+    const states = stored.sources.map(
+      (source) =>
+        resolveSource?.(source, run.owner, now) ??
+        sourceAccess(db, source, run.owner, principal, now),
     );
     if (states.includes("revoked")) status = "revoked";
     else if (

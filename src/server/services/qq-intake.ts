@@ -458,7 +458,7 @@ export class QqIntakeRuntime {
     if (outcome.kind !== "recorded" || !outcome.recorded) return;
     if (message.kind !== "message") return;
     const observation = message.observation;
-    const observe = this.#options.memory?.observe;
+    const observe = this.#options.memory?.observe?.bind(this.#options.memory);
     if (observe) {
       const row = this.#options.orm
         .select()

@@ -97,7 +97,10 @@ export function createApp(opts: CreateAppOptions): Hono {
       createSqliteModules({ db: business.db, orm: business.orm, gateway, agentRuntime });
     const journal = opts.conversationJournal ?? new ConversationEventRepository(business.db);
     const host = opts.conversationHost ?? new ConversationHost({ runtime: agentRuntime });
-    app.route("/v2/runs", runRoutes(business.db, runRepository));
+    app.route(
+      "/v2/runs",
+      runRoutes(business.db, runRepository, { resolveSource: opts.resolveSource }),
+    );
     app.route("/v2/conversations", conversationRoutes(business.db, { includeShared: true }));
     app.route("/v2/deliveries", deliveryRoutes(business.db, { includeShared: true }));
     app.route(
