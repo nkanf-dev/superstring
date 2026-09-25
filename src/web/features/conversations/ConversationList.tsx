@@ -221,7 +221,7 @@ export function ConversationList() {
           {t("刷新会话目录")}
         </button>
         {cursor && (
-          <button type="button" disabled={loading} onClick={() => void load(true)}>
+          <button type="button" disabled={loading} onClick={() => void load("more")}>
             {t("加载更多会话")}
           </button>
         )}

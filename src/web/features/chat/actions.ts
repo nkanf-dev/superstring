@@ -51,7 +51,7 @@ export function createChatActions(set: StoreSet, get: StoreGet): Actions {
         : {};
     });
   const syncSessions = async () => {
-    if (!(await get().loadConversations()) && get().directoryError)
+    if (!(await get().loadConversations("refresh-loaded")) && get().directoryError)
       throw new Error(get().directoryError ?? "");
   };
   const ensureConversation = async (sessionId: string): Promise<string> => {

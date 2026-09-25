@@ -174,3 +174,39 @@ it("a failed later directory page preserves the saved choice and exposes the res
   expect(store.getState().directoryError).toBe("Directory unavailable");
   expect(await storage.read("superstring-conversation")).toBe(group.id);
 });
+
+it("background refresh keeps loaded pages and a selected older item while filtering server deletions", async () => {
+  const deleted = { ...web, id: "deleted", sourceId: "deleted" };
+  for (const item of [web, group, deleted]) store.getState().rememberConversation(item);
+  store.setState({ currentConversationId: group.id, directoryCursor: "old-cursor" });
+  const incoming = [1, 2, 3].map((n) => ({ ...web, id: `new-${n}`, sourceId: `new-${n}` }));
+  const list = vi
+    .fn()
+    .mockResolvedValueOnce({ items: incoming.slice(0, 2), nextCursor: "fresh-2" })
+    .mockResolvedValueOnce({ items: [incoming[2], web], nextCursor: "fresh-3" })
+    .mockResolvedValueOnce({ items: [group], nextCursor: "fresh-4" });
+  store.setState({ apiClient: { ...store.getState().apiClient, listConversations: list } });
+  expect(await store.getState().loadConversations("refresh-loaded")).toBe(true);
+  expect(list.mock.calls).toEqual([[{}], [{ cursor: "fresh-2" }], [{ cursor: "fresh-3" }]]);
+  expect(store.getState().directoryIds).toEqual([
+    ...incoming.map((item) => item.id),
+    web.id,
+    group.id,
+  ]);
+  expect(store.getState().directoryIds).not.toContain("deleted");
+  expect(store.getState().currentConversationId).toBe(group.id);
+  expect(store.getState().directoryCursor).toBe("fresh-4");
+});
+
+it("failure while refreshing a later loaded page keeps the prior visible range with an error", async () => {
+  for (const item of [web, group]) store.getState().rememberConversation(item);
+  const before = store.getState().directoryIds;
+  const list = vi
+    .fn()
+    .mockResolvedValueOnce({ items: [web], nextCursor: "next" })
+    .mockRejectedValueOnce(Error("later page unavailable"));
+  store.setState({ apiClient: { ...store.getState().apiClient, listConversations: list } });
+  expect(await store.getState().loadConversations("refresh-loaded")).toBe(false);
+  expect(store.getState().directoryIds).toEqual(before);
+  expect(store.getState().directoryError).toBe("later page unavailable");
+});

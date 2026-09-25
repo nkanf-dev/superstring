@@ -11,7 +11,7 @@ export interface ConversationDirectoryState {
   directoryRevision: number;
   selectionRevision: number;
   rememberConversation: (summary: ConversationSummary) => void;
-  loadConversations: (more?: boolean) => Promise<boolean>;
+  loadConversations: (mode?: "refresh" | "more" | "refresh-loaded") => Promise<boolean>;
   selectConversation: (id: string) => Promise<void>;
   requestConversationNavigation: (id: string) => Promise<void>;
 }
@@ -56,26 +56,43 @@ export function createDirectoryActions(
             : state.sessionConversationIds,
         directoryRevision: state.directoryRevision + 1,
       })),
-    loadConversations: async (more = false) => {
+    loadConversations: async (mode = "refresh") => {
+      const more = mode === "more";
+      const loadedCount = get().directoryIds.length;
+      const selected = get().currentConversationId;
+      const keepSelectedVisible = !!selected && get().directoryIds.includes(selected);
       const readId = ++activeRead;
       const revision = get().directoryRevision + 1;
       const cursor = more ? get().directoryCursor : null;
       set({ directoryRevision: revision, directoryLoading: true, directoryError: null });
       try {
-        const page = await get().apiClient.listConversations(cursor ? { cursor } : {});
+        let page = await get().apiClient.listConversations(cursor ? { cursor } : {});
         if (get().directoryRevision !== revision) return false;
+        const refreshed = new Map(page.items.map((item) => [item.id, item]));
+        // Background completion refreshes the already loaded range, following the server's
+        // current cursors. Rebuilding that range also removes remotely deleted entries.
+        while (
+          mode === "refresh-loaded" &&
+          page.nextCursor &&
+          (refreshed.size < loadedCount || (keepSelectedVisible && !refreshed.has(selected)))
+        ) {
+          page = await get().apiClient.listConversations({ cursor: page.nextCursor });
+          if (get().directoryRevision !== revision) return false;
+          for (const item of page.items) refreshed.set(item.id, item);
+        }
+        const items = [...refreshed.values()];
         set((state) => ({
           summaryById: {
             ...state.summaryById,
-            ...Object.fromEntries(page.items.map((item) => [item.id, item])),
+            ...Object.fromEntries(items.map((item) => [item.id, item])),
           },
           directoryIds: [
-            ...new Set([...(more ? state.directoryIds : []), ...page.items.map((item) => item.id)]),
+            ...new Set([...(more ? state.directoryIds : []), ...items.map((item) => item.id)]),
           ],
           sessionConversationIds: {
             ...state.sessionConversationIds,
             ...Object.fromEntries(
-              page.items
+              items
                 .filter((item) => item.channel === "web")
                 .map((item) => [item.sourceId, item.id]),
             ),
