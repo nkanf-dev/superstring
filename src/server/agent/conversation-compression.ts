@@ -13,7 +13,7 @@ import { SUMMARY_RESULT_JSON_SCHEMA } from "./summary-contract";
 
 export interface CompressionRecord {
   id: string;
-  seq: number;
+  seq: number | null;
   speaker: string;
   text: string;
   sources: readonly SourceRef[];
@@ -26,6 +26,30 @@ const Fact = z.strictObject({
 });
 const Result = z.strictObject({ facts: z.array(Fact) });
 type Summary = z.infer<typeof Result>;
+
+/** Exact data envelope used both for admission and the published summary. */
+export function conversationSummaryEvidence(input: {
+  id: string;
+  records: readonly CompressionRecord[];
+  sources: readonly SourceRef[];
+  facts: Summary["facts"];
+}): Evidence {
+  const seqs = input.records.flatMap((record) => (record.seq === null ? [] : [record.seq]));
+  return {
+    id: input.id,
+    text: contextDumps({
+      kind: "conversation_summary",
+      lossy: true,
+      coverage: {
+        fromSeq: seqs.length ? Math.min(...seqs) : null,
+        throughSeq: seqs.length ? Math.max(...seqs) : null,
+        sourceIds: input.records.map((record) => record.id),
+      },
+      facts: input.facts,
+    }),
+    sources: [...input.sources],
+  };
+}
 
 /** Run-local segmented summary/overview. Source ownership and storage remain with the host. */
 export class ConversationCompressor {
@@ -44,17 +68,30 @@ export class ConversationCompressor {
     records: readonly CompressionRecord[];
     target: number;
     question: string;
+    /** Provenance for the question/other contextual inputs, beyond the records being summarized. */
+    sources?: readonly SourceRef[];
     signal: AbortSignal;
+    /** Host checks its real rendered input and configured summary-read budget. */
+    fits?: (evidence: Evidence) => boolean;
   }): Promise<Evidence | null> {
     if (!input.records.length) return null;
-    const sources = uniqueSources(input.records.flatMap((record) => record.sources));
+    const sources = uniqueSources([
+      ...(input.sources ?? []),
+      ...input.records.flatMap((record) => record.sources),
+    ]);
     input.signal.throwIfAborted();
     this.options.assertSources(sources);
     const key = createHash("sha256")
-      .update(contextDumps([input.records, input.target, input.question]))
+      .update(contextDumps([input.records, input.target, input.question, sources]))
       .digest("hex");
     const cached = this.cache.get(key);
-    if (cached) return cached;
+    if (cached) {
+      if (input.fits && !input.fits(cached))
+        fail("CONTEXT_SUMMARY_BUDGET", "缓存摘要及来源封装超过当前读取预算");
+      return cached;
+    }
+    const evidenceOf = (facts: Summary["facts"]) =>
+      conversationSummaryEvidence({ id: `summary:${key}`, records: input.records, sources, facts });
     const runtime = this.options.runtime;
     const cfg = runtime.p5_config;
     const signal = AbortSignal.any([
@@ -114,7 +151,10 @@ export class ConversationCompressor {
       const prepared = request(batch);
       if (prepared.cost > limit)
         fail("CONTEXT_AUX_BUDGET", "完整事件及前序摘要超过辅助模型容量，未截断来源");
-      const refs = uniqueSources([...covered, ...batch].flatMap((record) => record.sources));
+      const refs = uniqueSources([
+        ...(input.sources ?? []),
+        ...[...covered, ...batch].flatMap((record) => record.sources),
+      ]);
       this.options.assertSources(refs);
       const raw = await this.options.agentRuntime.completeLeaf(
         {
@@ -139,8 +179,11 @@ export class ConversationCompressor {
               if (!speakers.includes(fact.speaker))
                 fail("CONTEXT_INVALID_SELECTION", "摘要引用了未知说话人");
             }
-            if (estimateTokens(contextDumps(result)) > input.target)
-              fail("CONTEXT_SUMMARY_BUDGET", "模型摘要超过目标预算，未发布超额摘要");
+            if (
+              estimateTokens(contextDumps(result)) > input.target ||
+              (input.fits && !input.fits(evidenceOf(result.facts)))
+            )
+              fail("CONTEXT_SUMMARY_BUDGET", "模型摘要及来源封装超过目标预算，未发布超额摘要");
             return result;
           },
         },
@@ -161,20 +204,7 @@ export class ConversationCompressor {
     }
     if (batch.length) await flush(batch);
     this.options.assertSources(sources);
-    const evidence: Evidence = {
-      id: `summary:${key}`,
-      text: contextDumps({
-        kind: "conversation_summary",
-        lossy: true,
-        coverage: {
-          fromSeq: Math.min(...input.records.map((record) => record.seq)),
-          throughSeq: Math.max(...input.records.map((record) => record.seq)),
-          sourceIds: input.records.map((record) => record.id),
-        },
-        facts: previous.facts,
-      }),
-      sources,
-    };
+    const evidence = evidenceOf(previous.facts);
     this.cache.set(key, evidence);
     return evidence;
   }

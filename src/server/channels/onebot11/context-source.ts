@@ -20,6 +20,7 @@ import {
 import {
   type CompressionRecord,
   ConversationCompressor,
+  conversationSummaryEvidence,
 } from "../../agent/conversation-compression";
 import { memoryBodiesByScopeKeys, memoryFingerprintByScopeKeys } from "../../db/context-repository";
 import type { ConversationEventRepository } from "../../db/conversation-event-repository";
@@ -484,16 +485,40 @@ export class BotContextSource {
         nowSeconds,
       }).messages;
       const older = bounded.slice(0, bounded.length - selection.messages.length);
-      const room = limit - this.cost(tier, material);
+      const records = this.compressionRecords(older);
+      const sources = uniqueSources([
+        ...(material.sources ?? []),
+        ...records.flatMap((record) => record.sources),
+      ]);
+      const baseline = this.cost(tier, material);
+      const summaryCost = (summary: Evidence) =>
+        this.cost(tier, { ...material, summaries: [summary] }) - baseline;
+      const overhead = summaryCost(
+        conversationSummaryEvidence({
+          id: `summary:${"0".repeat(64)}`,
+          records,
+          sources,
+          facts: [],
+        }),
+      );
+      const room = limit - baseline;
+      const readBudget =
+        o.runtime.p5_config.summary_read_max_tokens ?? o.runtime.p5_config.summary_max_tokens;
       const target = Math.min(
         o.runtime.p5_config.summary_target_tokens,
-        o.runtime.p5_config.summary_read_max_tokens ?? o.runtime.p5_config.summary_max_tokens,
-        room,
+        readBudget - overhead,
+        room - overhead,
       );
       if (target > 0 && older.length) {
-        const records = this.compressionRecords(older);
         try {
-          const summary = await this.compressor.summarize({ records, target, question, signal });
+          const summary = await this.compressor.summarize({
+            records,
+            target,
+            question,
+            sources: material.sources,
+            signal,
+            fits: (summary) => summaryCost(summary) <= Math.min(room, readBudget),
+          });
           if (summary && this.cost(tier, { ...material, summaries: [summary] }) <= limit)
             material = {
               ...material,
@@ -507,9 +532,11 @@ export class BotContextSource {
           const code =
             error instanceof AppError
               ? error.code
-              : error instanceof SyntaxError || error instanceof z.ZodError
-                ? "MODEL_STRUCTURE_INVALID"
-                : "UNEXPECTED_FAILURE";
+              : error instanceof DOMException && error.name === "TimeoutError"
+                ? "MODEL_TIMEOUT"
+                : error instanceof SyntaxError || error instanceof z.ZodError
+                  ? "MODEL_STRUCTURE_INVALID"
+                  : "UNEXPECTED_FAILURE";
           const optionalFailure =
             code.startsWith("MODEL_") ||
             [
@@ -552,7 +579,7 @@ export class BotContextSource {
         id: sources.length
           ? contextDumps(sources.map((source) => [source.kind, source.id, source.revision]))
           : `anonymous:${message.occurredAtSeconds}:${index}`,
-        seq: rows.length ? Math.min(...rows.map((row) => row.seq)) : 0,
+        seq: rows.length ? Math.min(...rows.map((row) => row.seq)) : null,
         speaker: message.speakerId ?? message.speaker,
         text: contextDumps({
           text: message.text,
@@ -566,15 +593,22 @@ export class BotContextSource {
   private fitGroups(
     found: readonly Evidence[],
     fits: (candidate: Evidence[]) => boolean,
+    limit?: number,
   ): Evidence[] {
     const groups = new Map<string, Evidence[]>();
     for (const item of found) {
-      const key =
-        item.sources.find((source) => source.kind === "knowledge_document")?.id ?? item.id;
+      // The current SQLite knowledge backend emits original/derived pairs for the same offset.
+      // Keep that pair intact without requiring every selected chunk of a document to fit together.
+      const key = item.sources.some((source) => source.kind === "knowledge_document")
+        ? item.id.replace(/:(?:original|derived):/, ":")
+        : item.id;
       groups.set(key, [...(groups.get(key) ?? []), item]);
     }
     let kept: Evidence[] = [];
-    for (const group of groups.values()) if (fits([...kept, ...group])) kept = [...kept, ...group];
+    for (const group of groups.values()) {
+      if (limit !== undefined && kept.length + group.length > limit) continue;
+      if (fits([...kept, ...group])) kept = [...kept, ...group];
+    }
     return kept;
   }
   private async query(
@@ -628,6 +662,6 @@ export class BotContextSource {
       if (!fits([...result])) fail("CONTEXT_BUDGET_EXCEEDED", "完整记忆及观察封套超过剩余容量");
       return result;
     }
-    return this.fitGroups(input.limit === undefined ? result : result.slice(0, input.limit), fits);
+    return this.fitGroups(result, fits, input.limit);
   }
 }

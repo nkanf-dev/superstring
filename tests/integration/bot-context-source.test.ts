@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { createAgentRuntime } from "../../src/server/agent/agent-runtime";
 import type { AgentSpec } from "../../src/server/agent/agent-specs";
 import { ContextEngine } from "../../src/server/agent/context-engine";
+import { ConversationCompressor } from "../../src/server/agent/conversation-compression";
 import { BotContextSource } from "../../src/server/channels/onebot11/context-source";
 import { AgentRunRepository } from "../../src/server/db/agent-run-repository";
 import { ConversationEventRepository } from "../../src/server/db/conversation-event-repository";
@@ -29,12 +30,19 @@ import {
 import { QQ_CONTEXT_DEFAULT } from "../../src/server/services/qq-context-contract";
 import { QQ_MEDIA_RULE } from "../../src/server/services/qq-prompt-contract";
 import { runtimeFromAgent } from "../../src/server/services/runtime-config";
+import type { RuntimeConfig } from "../../src/shared/contracts";
 
 const handles: ReturnType<typeof openBusinessDb>[] = [];
 afterEach(() => {
   for (const h of handles.splice(0)) h.close();
 });
-function setup(input: { decisionTier?: "judgement" | "reply"; tokenBudget?: number } = {}) {
+function setup(
+  input: {
+    decisionTier?: "judgement" | "reply";
+    tokenBudget?: number;
+    mode?: RuntimeConfig["p5_config"]["retrieval_mode"];
+  } = {},
+) {
   const h = openBusinessDb();
   handles.push(h);
   ensureDefaults(h.orm, "reply-model");
@@ -64,7 +72,7 @@ function setup(input: { decisionTier?: "judgement" | "reply"; tokenBudget?: numb
   const row = getAgentRow(h.orm, DEFAULT_AGENT_ID);
   if (!row) throw new Error("agent");
   const runtime = runtimeFromAgent(row);
-  runtime.p5_config.retrieval_mode = "off";
+  runtime.p5_config.retrieval_mode = input.mode ?? "off";
   const journal = new ConversationEventRepository(h.db),
     outbox = new OutboundIntentRepository(h.db);
   const conversation = journal.ensureOneBot(binding.id);
@@ -211,6 +219,8 @@ function setup(input: { decisionTier?: "judgement" | "reply"; tokenBudget?: numb
     seed,
     runs,
     diagnostics,
+    agentRuntime,
+    binding,
   };
 }
 const readInput = () => ({ signal: new AbortController().signal, observations: [] });
@@ -218,8 +228,7 @@ describe("shared Bot context source", () => {
   it.each(["off", "conservative", "standard", "broad", "full_catalog", "full_body"] as const)(
     "preserves initial %s memory, scope and unchanged-step reuse",
     async (mode) => {
-      const h = setup();
-      h.runtime.p5_config.retrieval_mode = mode;
+      const h = setup({ mode });
       const own = h.memory("own apples"),
         foreign = h.memory("foreign pears", "40004");
       h.seed("apples?");
@@ -297,12 +306,22 @@ describe("shared Bot context source", () => {
     const h = setup({ tokenBudget: 256 });
     const old = h.seed(`old ${"x".repeat(200)}`, 3);
     h.seed(`middle ${"x".repeat(200)}`, 2);
-    h.seed(`new ${"x".repeat(200)}`);
+    const recent = h.seed(`new ${"x".repeat(200)}`);
     const material = await h.source.read(readInput());
     expect(material.summaries).toHaveLength(1);
     expect(JSON.stringify(material.pending)).toContain("new ");
     expect(JSON.stringify(material.pending)).not.toContain("old ");
     expect(material.summaries?.[0].sources.some((source) => source.id === old)).toBe(true);
+    expect(material.summaries?.[0].sources.some((source) => source.id === recent)).toBe(true);
+    const summaryRun = h.runs
+      .listRuns({ ownerKind: "qq_binding", ownerId: h.binding.id })
+      .find((run) => run.specId === "context.compress.events");
+    if (!summaryRun) throw new Error("Missing summary run");
+    expect(
+      h.runs
+        .getContext(summaryRun.steps[0].context)
+        ?.sources.some((source) => source.id === recent),
+    ).toBe(true);
     const text = JSON.parse(material.summaries?.[0].text ?? "{}");
     expect(text.coverage.fromSeq).toBe(1);
     expect(text.coverage.throughSeq).toBe(2);
@@ -328,5 +347,119 @@ describe("shared Bot context source", () => {
         ownerId: h.journal.get(h.conversation.id)?.sourceId ?? "",
       })[0]?.status,
     ).toBe("failed");
+  });
+  it("keeps raw input when the optional summary timeout fires, but records its failed leaf", async () => {
+    const h = setup({ tokenBudget: 256 });
+    h.seed(`old ${"x".repeat(200)}`, 2);
+    h.seed(`new ${"x".repeat(200)}`);
+    h.gateway.complete = async () => {
+      throw new DOMException("summary timeout", "TimeoutError");
+    };
+    const material = await h.source.read(readInput());
+    expect(JSON.stringify(material.pending)).toContain("new ");
+    expect(material.summaries).toBeUndefined();
+    expect(h.diagnostics).toEqual([{ kind: "supplemental_summary_failed", code: "MODEL_TIMEOUT" }]);
+    expect(h.runs.listRuns({ ownerKind: "qq_binding", ownerId: h.binding.id })[0]?.status).toBe(
+      "failed",
+    );
+  });
+  it("does not invoke compression when its exact empty source envelope cannot fit the read budget", async () => {
+    const h = setup({ tokenBudget: 256 });
+    h.runtime.p5_config.summary_read_max_tokens = 1;
+    h.seed(`old ${"x".repeat(200)}`, 2);
+    h.seed(`new ${"x".repeat(200)}`);
+    const material = await h.source.read(readInput());
+    expect(material.summaries).toBeUndefined();
+    expect(JSON.stringify(material.pending)).toContain("new ");
+    expect(h.calls).toHaveLength(0);
+  });
+
+  it("counts prior action observations and refuses partial full-mode evidence", async () => {
+    const h = setup({ mode: "full_body" });
+    h.memory("own memory");
+    h.seed("question");
+    await h.source.read(readInput());
+    const action = h.source.actions.find((action) => action.description.name === "memory.query");
+    if (!action) throw new Error("Missing memory action");
+    const first = await action.execute(
+      { query: "memory" },
+      { owner: { kind: "test", id: "test" }, signal: new AbortController().signal },
+    );
+    expect((first.value as unknown[]).length).toBeGreaterThan(0);
+    await h.source.read({
+      ...readInput(),
+      observations: [{ id: "large", name: "memory.query", value: "x".repeat(65000), sources: [] }],
+    });
+    await expect(
+      action.execute(
+        { query: "memory" },
+        { owner: { kind: "test", id: "test" }, signal: new AbortController().signal },
+      ),
+    ).rejects.toMatchObject({ code: "CONTEXT_BUDGET_EXCEEDED" });
+  });
+
+  it("does not turn source invalidation or caller cancellation into optional compression fallback", async () => {
+    for (const cancel of [false, true]) {
+      const h = setup({ tokenBudget: 256 });
+      const old = h.seed(`old ${"x".repeat(200)}`, 2);
+      h.seed(`new ${"x".repeat(200)}`);
+      const controller = new AbortController();
+      h.gateway.complete = async () => {
+        if (cancel) controller.abort(new Error("caller cancelled"));
+        else h.db.query("DELETE FROM qq_observation_text WHERE event_key=?").run(old);
+        return '{"facts":[]}';
+      };
+      const work = h.source.read({ signal: controller.signal, observations: [] });
+      if (cancel) await expect(work).rejects.toThrow("caller cancelled");
+      else await expect(work).rejects.toMatchObject({ code: "CONTEXT_SOURCE_INVALID" });
+      expect(h.diagnostics).toEqual([]);
+    }
+  });
+
+  it("folds complete batches into an overview while retaining prior facts and question provenance", async () => {
+    const h = setup();
+    h.gateway.loadedContextCapacity = async () => 6200;
+    const questionSource = { kind: "question", id: "question", revision: "1" };
+    let valid = true;
+    const compressor = new ConversationCompressor({
+      runtime: h.runtime,
+      gateway: h.gateway,
+      agentRuntime: h.agentRuntime,
+      owner: { kind: "summary_test", id: "run" },
+      assertSources(sources) {
+        if (!valid) throw new Error("revoked");
+        expect(sources).toContainEqual(questionSource);
+      },
+    });
+    const records = Array.from({ length: 4 }, (_, index) => ({
+      id: `e${index}`,
+      seq: index + 1,
+      speaker: index % 2 ? "assistant" : "member:42",
+      text: "x".repeat(1800),
+      sources: [{ kind: "event", id: `e${index}`, revision: "1" }],
+    }));
+    const input = {
+      records,
+      question: "what was agreed",
+      sources: [questionSource],
+      target: 1024,
+      signal: new AbortController().signal,
+    };
+    const evidence = await compressor.summarize(input);
+    expect(h.calls.length).toBeGreaterThan(1);
+    expect(JSON.parse(evidence?.text ?? "{}").facts).toHaveLength(4);
+    const seen = h.calls.flatMap((call) =>
+      JSON.parse(call.messages[1].content).events.map((event: { id: string }) => event.id),
+    );
+    expect(seen).toEqual(records.map((record) => record.id));
+    expect(evidence?.sources).toContainEqual(questionSource);
+    const count = h.calls.length;
+    await expect(compressor.summarize({ ...input, fits: () => false })).rejects.toMatchObject({
+      code: "CONTEXT_SUMMARY_BUDGET",
+    });
+    expect(await compressor.summarize(input)).toBe(evidence);
+    expect(h.calls).toHaveLength(count);
+    valid = false;
+    await expect(compressor.summarize(input)).rejects.toThrow("revoked");
   });
 });
