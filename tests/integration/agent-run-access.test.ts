@@ -5,7 +5,14 @@ import { handleError } from "../../src/server/api/error-handler";
 import { runRoutes } from "../../src/server/api/runs";
 import { AgentRunRepository } from "../../src/server/db/agent-run-repository";
 import { KnowledgeRepository } from "../../src/server/db/knowledge-repository";
-import { DEFAULT_USER_ID, ensureDefaults } from "../../src/server/db/repositories";
+import {
+  createSession,
+  DEFAULT_USER_ID,
+  deleteMessage,
+  ensureDefaults,
+  prepareTurn,
+  saveCompletedAssistantMessage,
+} from "../../src/server/db/repositories";
 import { openBusinessDb } from "../../src/server/db/schema-gate";
 import type { RunOwner } from "../../src/shared/contracts/agent-run";
 import type { SourceRef } from "../../src/shared/contracts/evidence";
@@ -67,6 +74,37 @@ function setup() {
 }
 
 describe("run diagnostics authorization and source lifetime", () => {
+  it("can inspect its current pending input without treating an incomplete turn as revoked", () => {
+    const { business, repository, snapshot } = setup();
+    const session = createSession(business.orm, "active input", { modelName: "test-model" });
+    const prepared = prepareTurn(business.orm, session.id, "current question", "active-request");
+    if (!prepared.generationToken) throw new Error("Missing fixture lease");
+    const turn = business.db.query("SELECT id FROM turns WHERE session_id=?").get(session.id) as {
+      id: string;
+    };
+    const handle = snapshot(
+      [{ kind: "web_turn", id: turn.id, revision: prepared.generationToken }],
+      { kind: "web_turn", id: turn.id, userId: DEFAULT_USER_ID },
+    );
+    expect(
+      inspectContext(business.db, repository, handle, { userId: DEFAULT_USER_ID })?.status,
+    ).toBe("exact");
+    saveCompletedAssistantMessage(
+      business.orm,
+      session.id,
+      "answer",
+      "active-request",
+      prepared.generationToken,
+    );
+    expect(
+      inspectContext(business.db, repository, handle, { userId: DEFAULT_USER_ID })?.status,
+    ).toBe("exact");
+    deleteMessage(business.orm, session.id, prepared.messageId);
+    expect(repository.getContext(handle)?.messages).toBeNull();
+    expect(
+      inspectContext(business.db, repository, handle, { userId: DEFAULT_USER_ID })?.status,
+    ).toBe("revoked");
+  });
   it("lists only the local owner's metadata and keeps actual input on the explicit context route", async () => {
     const { app, snapshot } = setup();
     const owner = { kind: "memory_job", id: crypto.randomUUID(), userId: DEFAULT_USER_ID };

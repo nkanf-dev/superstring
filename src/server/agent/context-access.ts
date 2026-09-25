@@ -62,18 +62,26 @@ export function sourceAccess(
   switch (source.kind) {
     case "web_turn": {
       const row = db
-        .query(`SELECT t.source_valid,t.context_valid,s.user_id,s.agent_id FROM turns t
+        .query(`SELECT t.source_valid,t.context_valid,t.generation_status,t.generation_token,
+        t.cancel_requested,t.invalidated_at,s.user_id,s.agent_id FROM turns t
         JOIN sessions s ON s.id=t.session_id WHERE t.id=?`)
         .get(source.id) as {
         source_valid: number;
         context_valid: number;
+        generation_status: string;
+        generation_token: string | null;
+        cancel_requested: number;
+        invalidated_at: string | null;
         user_id: string;
         agent_id: string;
       } | null;
       return row &&
         row.user_id === principal.userId &&
-        row.source_valid === 1 &&
-        row.context_valid === 1 &&
+        ((row.source_valid === 1 && row.context_valid === 1) ||
+          (row.generation_status === "active" &&
+            row.generation_token === source.revision &&
+            row.cancel_requested === 0 &&
+            row.invalidated_at === null)) &&
         (!owner.agentId || owner.agentId === row.agent_id)
         ? "available"
         : "revoked";
