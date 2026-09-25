@@ -59,6 +59,20 @@ function incoming(h: ReturnType<typeof setup>, id: string, time: number) {
     .run(id, `body ${id}`, time, later, at);
 }
 describe("canonical conversation source journal", () => {
+  it("journals a completed user message while its turn generation is still active", () => {
+    const h = setup();
+    const p = prepareTurn(h.orm, h.session.id, "accepted", "active");
+    const user = h.db
+      .query(
+        "SELECT id FROM messages WHERE turn_id=(SELECT turn_id FROM messages WHERE id=?) AND role='user'",
+      )
+      .get(p.messageId) as { id: string };
+    const event = h.journal.ingestWebMessage(user.id)!;
+    expect(event).not.toBeNull();
+    expect(projectConversationEvent(h.db, event).text).toBe("accepted");
+    expect(h.journal.ingestWebMessage(p.messageId)).toBeNull();
+  });
+
   it("allocates local monotonic seq for same-second/late sources and deduplicates only event identity", () => {
     const h = setup();
     const c = bot(h);

@@ -20,15 +20,29 @@ export function projectConversationEvent(
   if (event.source.kind === "web_message") {
     const m = db
       .query(
-        "SELECT m.content,m.status,t.source_valid,t.context_valid FROM messages m JOIN turns t ON t.id=m.turn_id WHERE m.id=?",
+        "SELECT m.content,m.status,m.role,t.source_valid,t.context_valid,t.generation_status,t.cancel_requested,t.generation_token FROM messages m JOIN turns t ON t.id=m.turn_id WHERE m.id=?",
       )
       .get(event.source.id) as {
       content: string;
       status: string;
       source_valid: number;
       context_valid: number;
+      role: string;
+      generation_status: string;
+      cancel_requested: number;
+      generation_token: string | null;
     } | null;
-    if (!m || !m.source_valid || !m.context_valid) return { ...base, contentState: "revoked" };
+    if (
+      !m ||
+      ((!m.source_valid || !m.context_valid) &&
+        !(
+          m.role === "user" &&
+          m.generation_status === "active" &&
+          m.generation_token !== null &&
+          !m.cancel_requested
+        ))
+    )
+      return { ...base, contentState: "revoked" };
     if (m.status !== "completed" || bodyRevision(m.content) !== event.source.revision)
       return { ...base, contentState: "unavailable" };
     return { ...base, text: m.content, contentState: "active" };

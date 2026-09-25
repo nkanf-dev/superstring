@@ -328,7 +328,7 @@ export class ConversationEventRepository {
   ingestWebMessage(messageId: string): ConversationEvent | null {
     const m = this.db
       .query(
-        "SELECT m.*,t.generation_token,t.source_valid FROM messages m JOIN turns t ON t.id=m.turn_id WHERE m.id=?",
+        "SELECT m.*,t.generation_token,t.source_valid,t.generation_status,t.cancel_requested FROM messages m JOIN turns t ON t.id=m.turn_id WHERE m.id=?",
       )
       .get(messageId) as {
       id: string;
@@ -340,8 +340,22 @@ export class ConversationEventRepository {
       created_at: string;
       generation_token: string | null;
       source_valid: number;
+      generation_status: string;
+      cancel_requested: number;
     } | null;
-    if (!m || m.role === "system" || !m.source_valid || m.status !== "completed") return null;
+    if (
+      !m ||
+      m.role === "system" ||
+      (!m.source_valid &&
+        !(
+          m.role === "user" &&
+          m.generation_status === "active" &&
+          m.generation_token !== null &&
+          !m.cancel_requested
+        )) ||
+      m.status !== "completed"
+    )
+      return null;
     const conversation = this.ensureWeb(m.session_id);
     if (!conversation) return null;
     return this.append({
