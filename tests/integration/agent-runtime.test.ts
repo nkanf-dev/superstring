@@ -571,13 +571,25 @@ describe("unified AgentRuntime", () => {
       },
       async *streamText(request) {
         expect(request).toMatchObject({ model: "reply", temperature: 0.8, maxTokens: 256 });
+        expect(request.messages[0]?.content).toEqual(
+          expect.arrayContaining([
+            { kind: "text", text: expect.stringContaining("configured reply persona") },
+          ]),
+        );
+        expect(JSON.stringify(request.messages[0])).not.toContain("decision-only instructions");
         yield "reply";
       },
     });
     const configured = {
       ...spec,
       model: "judgement",
-      generation: { model: "reply", temperature: 0.8, maxTokens: 256 },
+      instructions: "decision-only instructions",
+      generation: {
+        instructions: "configured reply persona",
+        model: "reply",
+        temperature: 0.8,
+        maxTokens: 256,
+      },
     };
     const result = await runtime.run(configured, direct);
     expect(repository.getRun(result.runId)?.steps.map((step) => step.model)).toEqual([

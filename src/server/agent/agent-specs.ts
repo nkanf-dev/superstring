@@ -22,6 +22,8 @@ export interface AgentSpec extends LeafAgentSpec {
   availableActions: readonly ActionDescription[];
   /** Different routes may decide and write; e.g. shared Bot judgement vs Agent reply model. */
   generation?: {
+    /** Channel reply instructions may differ from decision/review instructions. */
+    instructions?: string;
     model?: string;
     temperature?: number;
     maxTokens?: number;
