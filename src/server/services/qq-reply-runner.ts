@@ -198,7 +198,11 @@ export async function generateQqTextReply(
       limit: limits.messageLimit,
       includeSources: true,
     }).map(({ eventKey: _eventKey, ...message }) => message),
-    ownSpeech: ownSpeechSince(orm, scope, { sinceSeconds, limit: limits.messageLimit, includeSources: true }),
+    ownSpeech: ownSpeechSince(orm, scope, {
+      sinceSeconds,
+      limit: limits.messageLimit,
+      includeSources: true,
+    }),
   });
   const selection = qqSelectContext({ timeline, limits, nowSeconds });
   // The comparison sits after the context read so a held draft can still carry the selection its

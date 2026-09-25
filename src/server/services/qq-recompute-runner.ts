@@ -109,7 +109,11 @@ export async function recomputeQqReply(
       limit: limits.messageLimit,
       includeSources: true,
     }).map(({ eventKey: _eventKey, ...message }) => message),
-    ownSpeech: ownSpeechSince(orm, scope, { sinceSeconds, limit: limits.messageLimit, includeSources: true }),
+    ownSpeech: ownSpeechSince(orm, scope, {
+      sinceSeconds,
+      limit: limits.messageLimit,
+      includeSources: true,
+    }),
   });
   const selection = qqSelectContext({ timeline, limits, nowSeconds });
   if (qqMemberEventCount(orm, scope) !== eventCount) return { kind: "review_required" };

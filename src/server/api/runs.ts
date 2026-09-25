@@ -19,7 +19,8 @@ export function runRoutes(db: Database, repository = new AgentRunRepository(db))
     const ownerKind = c.req.query("ownerKind");
     const ownerId = c.req.query("ownerId");
     if (!ownerKind || !ownerId) throw validationFailed();
-    const runs = repository.listRuns({ ownerKind, ownerId })
+    const runs = repository
+      .listRuns({ ownerKind, ownerId })
       .filter((run) => canReadRun(db, run.owner, principal));
     return c.json({ runs });
   });
@@ -35,10 +36,15 @@ export function runRoutes(db: Database, repository = new AgentRunRepository(db))
     return c.json({ events: repository.listEvents(id, Number(raw)) });
   });
   router.get("/:id/context/:stepId", (c) => {
-    const context = inspectContext(db, repository, {
-      runId: parseUuidParam(c.req.param("id")),
-      stepId: parseUuidParam(c.req.param("stepId")),
-    }, principal);
+    const context = inspectContext(
+      db,
+      repository,
+      {
+        runId: parseUuidParam(c.req.param("id")),
+        stepId: parseUuidParam(c.req.param("stepId")),
+      },
+      principal,
+    );
     return context ? c.json(context) : c.json(notFound, 404);
   });
   return router;

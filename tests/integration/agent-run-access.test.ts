@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { Hono } from "hono";
-import type { RunOwner } from "../../src/shared/contracts/agent-run";
-import type { SourceRef } from "../../src/shared/contracts/evidence";
 import { inspectContext } from "../../src/server/agent/context-access";
 import { handleError } from "../../src/server/api/error-handler";
 import { runRoutes } from "../../src/server/api/runs";
@@ -9,6 +7,8 @@ import { AgentRunRepository } from "../../src/server/db/agent-run-repository";
 import { KnowledgeRepository } from "../../src/server/db/knowledge-repository";
 import { DEFAULT_USER_ID, ensureDefaults } from "../../src/server/db/repositories";
 import { openBusinessDb } from "../../src/server/db/schema-gate";
+import type { RunOwner } from "../../src/shared/contracts/agent-run";
+import type { SourceRef } from "../../src/shared/contracts/evidence";
 
 const handles: ReturnType<typeof openBusinessDb>[] = [];
 afterEach(() => {
@@ -20,17 +20,47 @@ function setup() {
   ensureDefaults(business.orm, "test-model");
   const repository = new AgentRunRepository(business.db);
   const app = new Hono().onError(handleError).route("/v2/runs", runRoutes(business.db, repository));
-  const snapshot = (sources: SourceRef[] = [], owner: RunOwner = {
-    kind: "knowledge_job", id: crypto.randomUUID(), userId: DEFAULT_USER_ID,
-  }, image = false) => {
+  const snapshot = (
+    sources: SourceRef[] = [],
+    owner: RunOwner = {
+      kind: "knowledge_job",
+      id: crypto.randomUUID(),
+      userId: DEFAULT_USER_ID,
+    },
+    image = false,
+  ) => {
     const runId = crypto.randomUUID();
     const stepId = crypto.randomUUID();
     const at = new Date().toISOString();
     repository.createRun({ runId, specId: "test", specVersion: "1", owner, at });
-    repository.startStep({ runId, stepId, stepNo: 1, model: "test-model", phase: "leaf", at,
-      messages: [{ role: "user", content: [{ kind: "text", text: "private original" },
-        ...(image ? [{ kind: "image" as const, sourceId: "image-1", revision: "1",
-          mimeType: "image/png", sha256: "image-digest" }] : [])] }], sources });
+    repository.startStep({
+      runId,
+      stepId,
+      stepNo: 1,
+      model: "test-model",
+      phase: "leaf",
+      at,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { kind: "text", text: "private original" },
+            ...(image
+              ? [
+                  {
+                    kind: "image" as const,
+                    sourceId: "image-1",
+                    revision: "1",
+                    mimeType: "image/png",
+                    sha256: "image-digest",
+                  },
+                ]
+              : []),
+          ],
+        },
+      ],
+      sources,
+    });
     return { runId, stepId };
   };
   return { business, repository, app, snapshot };
@@ -58,16 +88,24 @@ describe("run diagnostics authorization and source lifetime", () => {
     const second = snapshot();
     const foreign = snapshot([], { kind: "memory_job", id: "foreign", userId: "another-user" });
     expect((await app.request(`/v2/runs/${foreign.runId}`)).status).toBe(404);
-    expect((await app.request(`/v2/runs/${first.runId}/context/${second.stepId}`)).status).toBe(404);
+    expect((await app.request(`/v2/runs/${first.runId}/context/${second.stepId}`)).status).toBe(
+      404,
+    );
     expect((await app.request(`/v2/runs/${first.runId}/events?afterSeq=-1`)).status).toBe(422);
   });
 
   it("erases expired input and keeps only the source/layout metadata", () => {
     const { business, repository, snapshot } = setup();
-    const handle = snapshot([{ kind: "qq_observation", id: "event", revision: "1",
-      expiresAt: "2030-01-01T00:00:00.000Z" }]);
-    const inspected = inspectContext(business.db, repository, handle,
-      { userId: DEFAULT_USER_ID }, "2030-01-02T00:00:00.000Z");
+    const handle = snapshot([
+      { kind: "qq_observation", id: "event", revision: "1", expiresAt: "2030-01-01T00:00:00.000Z" },
+    ]);
+    const inspected = inspectContext(
+      business.db,
+      repository,
+      handle,
+      { userId: DEFAULT_USER_ID },
+      "2030-01-02T00:00:00.000Z",
+    );
     expect(inspected?.status).toBe("expired");
     expect(inspected?.exactMessages).toBeUndefined();
     expect(inspected?.layout).toHaveLength(1);
@@ -87,14 +125,24 @@ describe("run diagnostics authorization and source lifetime", () => {
     const { business, repository, snapshot } = setup();
     const knowledge = new KnowledgeRepository(business.db);
     const category = knowledge.createCategory("test");
-    const document = knowledge.importDocument({ category_id: category.id, name: "source",
-      original_text: "retained original" });
+    const document = knowledge.importDocument({
+      category_id: category.id,
+      name: "source",
+      original_text: "retained original",
+    });
     const granted = knowledge.replaceGrants(document.id, document.revision, [DEFAULT_USER_ID]);
-    const token = (business.db.query("SELECT token FROM knowledge_grants WHERE document_id=?")
-      .get(document.id) as { token: string }).token;
+    const token = (
+      business.db
+        .query("SELECT token FROM knowledge_grants WHERE document_id=?")
+        .get(document.id) as { token: string }
+    ).token;
     const handle = snapshot([
       { kind: "knowledge_document", id: document.id, revision: String(document.content_version) },
-      { kind: "knowledge_grant", id: JSON.stringify([document.id, DEFAULT_USER_ID]), revision: token },
+      {
+        kind: "knowledge_grant",
+        id: JSON.stringify([document.id, DEFAULT_USER_ID]),
+        revision: token,
+      },
     ]);
     knowledge.replaceGrants(document.id, granted.revision, []);
     // No diagnostic read or retention sweep is needed to remove the copied plaintext.
@@ -103,17 +151,22 @@ describe("run diagnostics authorization and source lifetime", () => {
     expect(result?.status).toBe("revoked");
     const fresh = knowledge.detail(document.id);
     knowledge.replaceGrants(document.id, fresh.revision, [DEFAULT_USER_ID]);
-    expect(inspectContext(business.db, repository, handle, { userId: DEFAULT_USER_ID })?.status)
-      .toBe("revoked");
+    expect(
+      inspectContext(business.db, repository, handle, { userId: DEFAULT_USER_ID })?.status,
+    ).toBe("revoked");
   });
 
   it("reports the actual latest knowledge maintenance job for UI run correlation", () => {
     const { business } = setup();
     const knowledge = new KnowledgeRepository(business.db);
     const category = knowledge.createCategory("jobs");
-    const document = knowledge.importDocument({ category_id: category.id, name: "source",
-      original_text: "input" });
-    const job = business.db.query("SELECT id FROM knowledge_jobs WHERE document_id=? ORDER BY rowid DESC LIMIT 1")
+    const document = knowledge.importDocument({
+      category_id: category.id,
+      name: "source",
+      original_text: "input",
+    });
+    const job = business.db
+      .query("SELECT id FROM knowledge_jobs WHERE document_id=? ORDER BY rowid DESC LIMIT 1")
       .get(document.id) as { id: string };
     expect(document.latest_job_id).toBe(job.id);
   });

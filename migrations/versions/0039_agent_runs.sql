@@ -45,3 +45,101 @@ CREATE TABLE run_events (
   payload TEXT NOT NULL CHECK (json_valid(payload)),
   PRIMARY KEY(run_id, seq)
 );
+
+-- A source mutation removes copied diagnostic text in the same transaction.
+CREATE TRIGGER revoke_agent_context_web_turn_delete AFTER DELETE ON turns
+
+BEGIN
+  UPDATE context_snapshots SET protected_messages=NULL,status='revoked'
+  WHERE status='exact' AND EXISTS (SELECT 1 FROM json_each(source_refs) r WHERE json_extract(r.value,'$.kind')='web_turn' AND json_extract(r.value,'$.id')=OLD.id);
+END;
+
+CREATE TRIGGER revoke_agent_context_web_turn_invalid AFTER UPDATE OF source_valid,context_valid ON turns
+WHEN NEW.source_valid=0 OR NEW.context_valid=0
+BEGIN
+  UPDATE context_snapshots SET protected_messages=NULL,status='revoked'
+  WHERE status='exact' AND EXISTS (SELECT 1 FROM json_each(source_refs) r WHERE json_extract(r.value,'$.kind')='web_turn' AND json_extract(r.value,'$.id')=OLD.id);
+END;
+
+CREATE TRIGGER revoke_agent_context_memory_delete AFTER DELETE ON memory_entries
+
+BEGIN
+  UPDATE context_snapshots SET protected_messages=NULL,status='revoked'
+  WHERE status='exact' AND EXISTS (SELECT 1 FROM json_each(source_refs) r WHERE json_extract(r.value,'$.kind')='memory' AND json_extract(r.value,'$.id')=OLD.id);
+END;
+
+CREATE TRIGGER revoke_agent_context_memory_hide AFTER UPDATE OF status ON memory_entries
+WHEN NEW.status='invalid'
+BEGIN
+  UPDATE context_snapshots SET protected_messages=NULL,status='revoked'
+  WHERE status='exact' AND EXISTS (SELECT 1 FROM json_each(source_refs) r WHERE json_extract(r.value,'$.kind')='memory' AND json_extract(r.value,'$.id')=OLD.id);
+END;
+
+CREATE TRIGGER revoke_agent_context_document_delete AFTER DELETE ON knowledge_documents
+
+BEGIN
+  UPDATE context_snapshots SET protected_messages=NULL,status='revoked'
+  WHERE status='exact' AND EXISTS (SELECT 1 FROM json_each(source_refs) r WHERE json_extract(r.value,'$.kind')='knowledge_document' AND json_extract(r.value,'$.id')=OLD.id);
+END;
+
+CREATE TRIGGER revoke_agent_context_document_revision AFTER UPDATE OF content_version ON knowledge_documents
+WHEN NEW.content_version<>OLD.content_version
+BEGIN
+  UPDATE context_snapshots SET protected_messages=NULL,status='revoked'
+  WHERE status='exact' AND EXISTS (SELECT 1 FROM json_each(source_refs) r WHERE json_extract(r.value,'$.kind')='knowledge_document' AND json_extract(r.value,'$.id')=OLD.id);
+END;
+
+CREATE TRIGGER revoke_agent_context_grant AFTER DELETE ON knowledge_grants
+
+BEGIN
+  UPDATE context_snapshots SET protected_messages=NULL,status='revoked'
+  WHERE status='exact' AND EXISTS (SELECT 1 FROM json_each(source_refs) r WHERE json_extract(r.value,'$.kind')='knowledge_grant' AND json_extract(r.value,'$.id')=json_array(OLD.document_id,OLD.agent_id));
+END;
+
+CREATE TRIGGER expire_agent_context_qq_text AFTER DELETE ON qq_observation_text
+
+BEGIN
+  UPDATE context_snapshots SET protected_messages=NULL,status='expired'
+  WHERE status='exact' AND EXISTS (SELECT 1 FROM json_each(source_refs) r WHERE json_extract(r.value,'$.kind')='qq_observation' AND json_extract(r.value,'$.id')=OLD.event_key);
+END;
+
+CREATE TRIGGER expire_agent_context_qq_media AFTER DELETE ON qq_media_notes
+
+BEGIN
+  UPDATE context_snapshots SET protected_messages=NULL,status='expired'
+  WHERE status='exact' AND EXISTS (SELECT 1 FROM json_each(source_refs) r WHERE json_extract(r.value,'$.kind')='qq_media' AND json_extract(r.value,'$.id')=OLD.id);
+END;
+
+CREATE TRIGGER expire_agent_context_qq_speech AFTER DELETE ON qq_speech_text
+
+BEGIN
+  UPDATE context_snapshots SET protected_messages=NULL,status='expired'
+  WHERE status='exact' AND EXISTS (SELECT 1 FROM json_each(source_refs) r WHERE json_extract(r.value,'$.kind')='qq_speech' AND json_extract(r.value,'$.id')=OLD.speech_id);
+END;
+
+CREATE TRIGGER revoke_agent_context_qq_event AFTER DELETE ON qq_events
+
+BEGIN
+  UPDATE context_snapshots SET protected_messages=NULL,status='revoked'
+  WHERE status='exact' AND EXISTS (SELECT 1 FROM json_each(source_refs) r WHERE json_extract(r.value,'$.kind')='qq_observation' AND json_extract(r.value,'$.id')=OLD.event_key);
+END;
+
+CREATE TRIGGER revoke_agent_context_qq_sticker AFTER DELETE ON qq_sticker_assets
+
+BEGIN
+  UPDATE context_snapshots SET protected_messages=NULL,status='revoked'
+  WHERE status='exact' AND EXISTS (SELECT 1 FROM json_each(source_refs) r WHERE json_extract(r.value,'$.kind')='qq_sticker' AND json_extract(r.value,'$.id')=OLD.id);
+END;
+
+CREATE TRIGGER redact_agent_context_control AFTER UPDATE OF protected_messages ON context_snapshots
+WHEN NEW.protected_messages IS NULL
+BEGIN
+  UPDATE agent_steps SET decision=NULL WHERE step_id=NEW.step_id;
+END;
+CREATE TRIGGER revoke_agent_context_owner AFTER DELETE ON agents
+BEGIN
+  UPDATE context_snapshots SET protected_messages=NULL,status='revoked'
+  WHERE status='exact' AND step_id IN (
+    SELECT s.step_id FROM agent_steps s JOIN agent_runs r ON r.run_id=s.run_id WHERE r.agent_id=OLD.id
+  );
+END;

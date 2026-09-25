@@ -321,7 +321,7 @@ describe("frozen schema defaults and product initialization", () => {
     // 模型，NULL＝跟随每间会话绑定助手的对话模型。实测于 v1—v37 逐字节重现原值之后。
     "0b2cfa6295a1f660d2d6f28e42d3327bb95457043cf997a20108531217ab2773",
     // v39: unified Agent runs, steps, source-bound context snapshots and event journal.
-    "e9dd3b34f6a36d672341ce9b7e76d41c2d178d7d4ad2aafa11776a1fb7bbfbf8",
+    "409b5450681e00f01e22d1e2c384e0bede564d2f3b3d2a2f047ae460a4f2f9db",
   ];
   // The loop is driven BY the fingerprint list, not by a hand-written run of numbers: the two were
   // maintained separately once, the loop stopped one version short, and the newest recorded hash —

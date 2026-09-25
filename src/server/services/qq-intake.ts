@@ -243,10 +243,14 @@ export class QqIntakeRuntime {
   constructor(options: QqIntakeRuntimeOptions) {
     this.#options = options;
     if (options.media) {
-      this.#mediaRuntime = options.media.agentRuntime ?? createAgentRuntime({
-        vision: options.media.vision,
-        repository: new AgentRunRepository((options.orm as unknown as { $client: Database }).$client),
-      });
+      this.#mediaRuntime =
+        options.media.agentRuntime ??
+        createAgentRuntime({
+          vision: options.media.vision,
+          repository: new AgentRunRepository(
+            (options.orm as unknown as { $client: Database }).$client,
+          ),
+        });
     }
   }
 

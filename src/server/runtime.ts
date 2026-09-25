@@ -2,10 +2,10 @@
 // Kept separate from socket binding so tests can exercise startup and shutdown.
 import path from "node:path";
 import type { Hono } from "hono";
+import { type AgentRuntime, createAgentRuntime } from "./agent/agent-runtime";
 import { createApp } from "./app";
-import { createAgentRuntime, type AgentRuntime } from "./agent/agent-runtime";
-import { AgentRunRepository } from "./db/agent-run-repository";
 import { browserStateSecret } from "./browser-state";
+import { AgentRunRepository } from "./db/agent-run-repository";
 import type { BusinessDbHandle } from "./db/connection";
 import { resolveModelProviderRoute } from "./db/model-provider-repository";
 import { type BusinessMigrationSql, openBusinessDb } from "./db/schema-gate";
@@ -116,9 +116,11 @@ export function createRuntime(options: RuntimeOptions = {}): SuperstringRuntime 
         : createLmStudioVisionClient(gateway.config, fetch, { externalModel });
     const runRepository = new AgentRunRepository(business.db);
     runRepository.expireContexts();
+    runRepository.recoverInterrupted();
     agentRuntime = createAgentRuntime({ gateway, vision: visionClient, repository: runRepository });
     memoryService =
-      options.memoryService ?? new MemoryService({ orm: business.orm, db: business.db, gateway, agentRuntime });
+      options.memoryService ??
+      new MemoryService({ orm: business.orm, db: business.db, gateway, agentRuntime });
     knowledgeOrganizer = new KnowledgeOrganizer({ db: business.db, gateway, agentRuntime });
     const stickerStore = new QqStickerStore({
       directory: options.qqStickerDirectory ?? DEFAULT_QQ_STICKER_DIRECTORY,
@@ -202,7 +204,10 @@ export function createRuntime(options: RuntimeOptions = {}): SuperstringRuntime 
     start(): void {
       if (started || stopped) return;
       started = true;
-      contextSweep = setInterval(() => new AgentRunRepository(business.db).expireContexts(), 60_000);
+      contextSweep = setInterval(
+        () => new AgentRunRepository(business.db).expireContexts(),
+        60_000,
+      );
       contextSweep.unref();
       memoryService.start();
       knowledgeOrganizer.start();

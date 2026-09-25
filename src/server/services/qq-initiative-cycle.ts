@@ -1,4 +1,3 @@
-import type { LeafAgentRuntime } from "../agent/agent-runtime";
 // P3l synthetic-only orchestration of classified initiative: no transport and no submit.
 //
 // 0037（用户 2026-09-25）：这一轮要回几个人，就各跑一遍回复管线——**每人一次生成、一人一条消息**。
@@ -11,6 +10,7 @@ import type { LeafAgentRuntime } from "../agent/agent-runtime";
 // sentence must not silently survive. The loop therefore picks after each (re)generation and
 // keeps the pick across a review that changed nothing.
 import { z } from "zod";
+import type { LeafAgentRuntime } from "../agent/agent-runtime";
 import { readQqBinding } from "../db/qq-binding-repository";
 import type { Orm } from "../db/repositories";
 import type { ModelGateway } from "../llm/model-gateway";
@@ -110,7 +110,15 @@ export async function runQqReplyPipeline(
   let failure: string | null = null;
   let recomputesUsed = 0;
   for (const opening of judgement.openings) {
-    const one = await prepareOneReply(orm, gateway, judgement, opening, nowSeconds, stage, agentRuntime);
+    const one = await prepareOneReply(
+      orm,
+      gateway,
+      judgement,
+      opening,
+      nowSeconds,
+      stage,
+      agentRuntime,
+    );
     if (one.kind === "held") {
       failure = one.reason;
       console.warn(
@@ -142,7 +150,14 @@ async function prepareOneReply(
   | { readonly kind: "draft"; readonly draft: QqRoundDraft }
   | { readonly kind: "held"; readonly reason: string }
 > {
-  const reply = await generateQqTextReply(orm, gateway, judgement, opening, nowSeconds, agentRuntime);
+  const reply = await generateQqTextReply(
+    orm,
+    gateway,
+    judgement,
+    opening,
+    nowSeconds,
+    agentRuntime,
+  );
   if (reply.kind !== "draft" && reply.kind !== "review_required")
     return { kind: "held", reason: reply.kind === "blocked" ? reply.reason : reply.kind };
   let pending: QqPendingReview = reply.kind === "draft" ? pendingQqReview(reply) : reply.draft;
@@ -189,7 +204,14 @@ async function prepareOneReply(
       continue;
     }
     if (review.kind !== "recompute_needed") return { kind: "held", reason: review.kind };
-    const refreshed = await recomputeQqReply(orm, gateway, pending, review, nowSeconds, agentRuntime);
+    const refreshed = await recomputeQqReply(
+      orm,
+      gateway,
+      pending,
+      review,
+      nowSeconds,
+      agentRuntime,
+    );
     if (refreshed.kind === "blocked") return { kind: "held", reason: refreshed.reason };
     if (refreshed.kind !== "draft") return { kind: "held", reason: refreshed.kind };
     // A regenerated sentence invalidates the pick: the loop runs the stage again.
