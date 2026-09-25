@@ -70,6 +70,7 @@ async function performNavigation(
     get().discardMemoryCorrection();
     if (pending.page !== "settings") get().discardKnowledgeEditor();
     set(patch);
+    if (pending.conversationId) await get().selectConversation(pending.conversationId);
     return;
   }
   if (pending.kind === "agent") {
@@ -135,6 +136,7 @@ export function createNavigationActions(
   get: StoreGet,
 ): Pick<
   SuperstringState,
+  | "requestConversationNavigation"
   | "openSettingsRoute"
   | "openChat"
   | "openSettings"
@@ -148,6 +150,13 @@ export function createNavigationActions(
   | "cancelPendingNavigation"
 > {
   return {
+    requestConversationNavigation: async (id) => {
+      get().requestPageNavigation("chat", "hub");
+      const pending = get().pendingNavigation;
+      if (pending?.kind === "page" && pending.page === "chat")
+        set({ pendingNavigation: { ...pending, conversationId: id } });
+      else if (get().page === "chat") await get().selectConversation(id);
+    },
     openSettingsRoute: (settingsRoute) => {
       if (settingsRoute === "knowledge-model" || settingsRoute === "management")
         settingsRoute = "models";

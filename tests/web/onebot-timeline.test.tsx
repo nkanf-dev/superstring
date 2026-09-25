@@ -35,6 +35,7 @@ afterEach(() => {
 });
 const source = { kind: "qq_event", id: "source", revision: "1" };
 const observed: ConversationEventView = {
+  wake: null,
   conversationId: "bot",
   seq: 1,
   eventKey: "one",
@@ -97,6 +98,7 @@ it("OneBot timeline revalidates expired bodies on refresh and clears projections
 });
 it("unknown text/sticker delivery shows independent receipt facts and offers no resend", async () => {
   const delivery: Delivery = {
+    target: null,
     id: "output",
     runId: "run",
     conversationId: "bot",

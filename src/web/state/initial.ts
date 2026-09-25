@@ -9,11 +9,11 @@ import type {
   MemoryTurnRow,
   PersonaResponse,
   PolicyView,
-  SessionResponse,
 } from "../../shared/contracts";
 import type { SettingsRoute } from "../app/settings-routes";
 import type { BrowserStateStorage } from "../browser-state";
 import { initialConversationState } from "../features/chat/conversation-state";
+import { directoryInitial } from "../features/conversations/directory-state";
 import { desktopSettingsInitial } from "../features/general/desktop-state";
 import { knowledgeInitial } from "../features/knowledge/types";
 import {
@@ -35,6 +35,7 @@ import type {
 export const initial = {
   ...initialRunState,
   ...initialConversationState,
+  ...directoryInitial,
   ...knowledgeInitial,
   ...qqStickerInitial,
   ...qqSchemeInitial,
@@ -55,9 +56,7 @@ export const initial = {
   navigationConfirmOpen: false,
   navigationConfirmMessage: "",
   agents: [] as AgentResponse[],
-  sessions: [] as SessionResponse[],
   selectedNewSessionAgentId: null as string | null,
-  currentSessionId: null as string | null,
   editorAgentId: "__new__" as const,
   editorDraft: null as AgentDraft | null,
   editorLoading: false,

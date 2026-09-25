@@ -4,6 +4,7 @@ import { createAgentActions } from "./features/agents/actions";
 import { createModelActions } from "./features/agents/model-actions";
 import { createPageActions } from "./features/agents/page-actions";
 import { createChatActions } from "./features/chat/actions";
+import { createDirectoryActions } from "./features/conversations/directory-state";
 import { createDesktopSettingsActions } from "./features/general/desktop-state";
 import { createKnowledgeActions } from "./features/knowledge/actions";
 import { createKnowledgeModelActions } from "./features/knowledge/model-actions";
@@ -41,6 +42,7 @@ export const useSuperstringStore = create<SuperstringState>()((set, get) => ({
   ...createBootstrapActions(set, get),
   ...createNavigationActions(set, get),
   ...createChatActions(set, get),
+  ...createDirectoryActions(set, get),
   ...createAgentActions(set, get),
   ...createPageActions(set, get),
   ...createModelActions(set, get),

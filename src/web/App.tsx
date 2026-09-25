@@ -9,6 +9,7 @@ import { dirtyPages } from "./features/agents/page-drafts";
 import { AppearanceSettings } from "./features/appearance/AppearanceSettings";
 import { ChatPage } from "./features/chat/ChatPage";
 import { ConversationTimeline } from "./features/conversations/ConversationTimeline";
+import { selectedConversation } from "./features/conversations/directory-state";
 import { GeneralSettings } from "./features/general/GeneralSettings";
 import { OperatingModeSettings } from "./features/general/OperatingModeSettings";
 import { KnowledgeSettings } from "./features/knowledge/KnowledgeSettings";
@@ -32,7 +33,8 @@ export function Sidebar() {
 function App() {
   const t = useI18n();
   const status = useSuperstringStore((state) => state.status);
-  const botConversation = useSuperstringStore((state) => state.selectedBotConversation);
+  const selected = useSuperstringStore(selectedConversation);
+  const botConversation = selected?.channel === "onebot11" ? selected : null;
   const page = useSuperstringStore((state) => state.page);
   const settingsView = useSuperstringStore((state) => state.settingsView);
   const bootstrap = useSuperstringStore((state) => state.bootstrap);

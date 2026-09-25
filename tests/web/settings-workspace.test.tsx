@@ -9,7 +9,7 @@ import { SettingsBody } from "../../src/web/app/SettingsSidebar";
 import { SettingsWorkspace } from "../../src/web/app/SettingsWorkspace";
 import { KNOWLEDGE_PLANNED_FIELDS, SETTINGS_ROUTES } from "../../src/web/app/settings-routes";
 import { selectLocale } from "../../src/web/i18n";
-import { useSuperstringStore as store } from "../../src/web/store";
+import { fixtureStore as store } from "./helpers/chat-fixture";
 
 const originalActions = {
   reloadMemory: store.getState().reloadMemory,

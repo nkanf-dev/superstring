@@ -213,7 +213,7 @@ describe("R5 视觉契约", () => {
     expect(rule(".settings-navigation button")).toContain("background: transparent");
     expect(rule(".settings-navigation button")).toContain("min-height: var(--ac-nav-height)");
     const chatSidebar = readFileSync(resolve(projectRoot, "src/web/app/Sidebar.tsx"), "utf8");
-    expect(chatSidebar).toContain("<SessionList />");
+    expect(chatSidebar).toContain("<ConversationList />");
     expect(chatSidebar).not.toContain("SettingsSidebar");
     const header = readFileSync(resolve(projectRoot, "src/web/app/SettingsHeader.tsx"), "utf8");
     expect(header).not.toContain("<SettingsNavigation />");

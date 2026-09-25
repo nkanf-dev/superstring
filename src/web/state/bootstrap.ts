@@ -15,14 +15,15 @@ export function createBootstrapActions(
         const [agentsResult, sessionsResult, catalogResult, providersResult, storageResult] =
           await Promise.allSettled([
             get().apiClient.listAgents(),
-            get().apiClient.listSessions(),
+            get().apiClient.listConversations(),
             get().apiClient.listModels(),
             // 外部模型 API（0032）：登记过的外部模型名与本地模型并列进入选择器。取不到就当没有。
             get().apiClient.listModelProviders(),
             loadBrowserStateStorage(() => get().apiClient.getBrowserStateConfig()),
           ]);
         const agents = agentsResult.status === "fulfilled" ? agentsResult.value : [];
-        const sessions = sessionsResult.status === "fulfilled" ? sessionsResult.value : [];
+        const conversations =
+          sessionsResult.status === "fulfilled" ? sessionsResult.value.items : [];
         const catalog = catalogResult.status === "fulfilled" ? catalogResult.value : null;
         const browserStateStorage =
           storageResult.status === "fulfilled" ? storageResult.value : null;
@@ -32,8 +33,14 @@ export function createBootstrapActions(
         const savedSession = await browserStateStorage
           ?.read("superstring-session")
           .catch(() => null);
-        const selectedSession =
-          sessions.find((item) => item.id === savedSession) ?? sessions[0] ?? null;
+        const savedConversation = await browserStateStorage
+          ?.read("superstring-conversation")
+          .catch(() => null);
+        const selected =
+          conversations.find((item) => item.id === savedConversation) ??
+          conversations.find((item) => item.channel === "web" && item.sourceId === savedSession) ??
+          conversations[0] ??
+          null;
         const providers = providersResult.status === "fulfilled" ? providersResult.value : [];
         const local = [...new Set(catalog?.models ?? [])];
         const external = [
@@ -51,7 +58,15 @@ export function createBootstrapActions(
         set({
           status: "ready",
           agents,
-          sessions,
+          summaryById: Object.fromEntries(conversations.map((item) => [item.id, item])),
+          directoryIds: conversations.map((item) => item.id),
+          directoryCursor:
+            sessionsResult.status === "fulfilled" ? sessionsResult.value.nextCursor : null,
+          sessionConversationIds: Object.fromEntries(
+            conversations
+              .filter((item) => item.channel === "web")
+              .map((item) => [item.sourceId, item.id]),
+          ),
           modelNames: reported,
           loadedModelNames: local,
           externalModelNames: external,
@@ -64,11 +79,10 @@ export function createBootstrapActions(
                 ? translate("LM Studio 当前报告 {0} 个已加载模型。", reported.length)
                 : translate("LM Studio 当前没有报告已加载模型；仍可保留或手动输入模型 ID。"),
           selectedNewSessionAgentId: selectedAgent?.id ?? null,
-          currentSessionId: selectedSession?.id ?? null,
           browserStateStorage,
           error: failures.length ? failures.join("；") : null,
         });
-        if (selectedSession) await get().selectSession(selectedSession.id);
+        if (selected) await get().selectConversation(selected.id);
       } finally {
         endProcessing(get, set);
       }

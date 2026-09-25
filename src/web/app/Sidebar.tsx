@@ -1,7 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useEffect, useRef, useState } from "react";
-import { SessionList } from "../features/chat/SessionList";
-import { BotConversationList } from "../features/conversations/BotConversationList";
+import { ConversationList } from "../features/conversations/ConversationList";
 import { translateNotice, useI18n } from "../i18n";
 import { useSuperstringStore } from "../store";
 import { Field } from "../ui/Field";
@@ -131,8 +130,7 @@ export function Sidebar({ version }: { version: string }) {
             </Dialog.Content>
           </Dialog.Portal>
         </Dialog.Root>
-        <SessionList />
-        <BotConversationList />
+        <ConversationList />
       </div>
       <button
         className="settings-button"

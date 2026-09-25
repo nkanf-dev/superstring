@@ -5,6 +5,10 @@ import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { HeadingIcon, Icon } from "../../ui/icons";
 import { localTime } from "../../ui/local-time";
 import { ProcessingStatus } from "../../ui/ProcessingStatus";
+import {
+  selectedConversation,
+  currentSessionId as selectedSessionId,
+} from "../conversations/directory-state";
 import { RunLink } from "../runs/RunInspector";
 import { ContextUsagePanel } from "./ContextUsagePanel";
 import { chatBusy, currentChat } from "./conversation-state";
@@ -23,8 +27,8 @@ export function ChatPage() {
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  const sessions = useSuperstringStore((state) => state.sessions);
-  const currentSessionId = useSuperstringStore((state) => state.currentSessionId);
+  const current = useSuperstringStore(selectedConversation);
+  const currentSessionId = useSuperstringStore(selectedSessionId);
   const canonicalId = useSuperstringStore((state) => state.currentConversationId);
   const resolving = !!currentSessionId && !canonicalId;
   const chat = useSuperstringStore(currentChat);
@@ -47,7 +51,6 @@ export function ChatPage() {
   const resendKnowledgeChat = useSuperstringStore((state) => state.resendKnowledgeChat);
   const cancelKnowledgeResend = useSuperstringStore((state) => state.cancelKnowledgeResend);
   const deleteMessageAction = useSuperstringStore((state) => state.deleteMessage);
-  const current = sessions.find((item) => item.id === currentSessionId);
   const modeLabel =
     runtimeConfig?.mode === "chat"
       ? t("聊天")
