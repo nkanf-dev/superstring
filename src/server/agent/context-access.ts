@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { createHash } from "node:crypto";
 import type {
   ContextHandle,
   InspectedContext,
@@ -7,6 +8,7 @@ import type {
 } from "../../shared/contracts/agent-run";
 import type { SourceRef } from "../../shared/contracts/evidence";
 import type { AgentRunRepository } from "../db/agent-run-repository";
+import { memoryRevision } from "../db/memory-content-repository";
 import { DEFAULT_USER_ID } from "../db/repositories";
 
 export interface ContextPrincipal {
@@ -17,6 +19,24 @@ type SourceAccess = "available" | "expired" | "revoked";
 
 /** Resolve the application's existing ownership, not a principal supplied in a URL. */
 export function canReadRun(db: Database, owner: RunOwner, principal: ContextPrincipal): boolean {
+  if (owner.userId !== undefined && owner.userId !== principal.userId) return false;
+  if (owner.kind === "conversation") {
+    return !!db
+      .query(`SELECT 1 FROM conversations c WHERE c.id=? AND c.user_id=?
+      AND c.closed_at IS NULL AND (? IS NULL OR c.agent_id=?) AND (
+        (c.channel='web' AND EXISTS(SELECT 1 FROM sessions s WHERE s.id=c.source_id AND s.user_id=c.user_id AND s.agent_id=c.agent_id)) OR
+        (c.channel='onebot11' AND EXISTS(SELECT 1 FROM qq_bindings b WHERE b.id=c.source_id AND b.agent_id=c.agent_id))
+      )`)
+      .get(owner.id, principal.userId, owner.agentId ?? null, owner.agentId ?? null);
+  }
+  if (owner.kind === "qq_binding") {
+    return (
+      principal.userId === DEFAULT_USER_ID &&
+      !!db
+        .query("SELECT 1 FROM qq_bindings WHERE id=? AND (? IS NULL OR agent_id=?)")
+        .get(owner.id, owner.agentId ?? null, owner.agentId ?? null)
+    );
+  }
   if (owner.userId !== undefined) return owner.userId === principal.userId;
   if (principal.userId !== DEFAULT_USER_ID) return false;
   switch (owner.kind) {
@@ -35,8 +55,6 @@ export function canReadRun(db: Database, owner: RunOwner, principal: ContextPrin
     }
     case "knowledge_job":
       return db.query("SELECT 1 FROM knowledge_jobs WHERE id=?").get(owner.id) !== null;
-    case "qq_binding":
-      return db.query("SELECT 1 FROM qq_bindings WHERE id=?").get(owner.id) !== null;
     case "qq_media":
       return db.query("SELECT 1 FROM qq_media_notes WHERE id=?").get(owner.id) !== null;
     case "qq_speech":
@@ -88,11 +106,16 @@ export function sourceAccess(
     }
     case "memory": {
       const row = db
-        .query("SELECT user_id,agent_id,status FROM memory_entries WHERE id=?")
-        .get(source.id) as { user_id: string; agent_id: string; status: string } | null;
+        .query(
+          "SELECT user_id,agent_id,id,name,summary,tags,body,status,config_snapshot AS configSnapshot FROM memory_entries WHERE id=?",
+        )
+        .get(source.id) as
+        | (Parameters<typeof memoryRevision>[0] & { user_id: string; agent_id: string })
+        | null;
       return row &&
         row.user_id === principal.userId &&
         row.status !== "invalid" &&
+        memoryRevision(row) === source.revision &&
         (!owner.agentId || owner.agentId === row.agent_id)
         ? "available"
         : "revoked";
@@ -125,9 +148,13 @@ export function sourceAccess(
     }
     case "qq_observation": {
       const row = db
-        .query(`SELECT e.agent_id,t.expires_at FROM qq_events e
+        .query(`SELECT e.agent_id,t.body,t.expires_at FROM qq_events e
         LEFT JOIN qq_observation_text t ON t.event_key=e.event_key WHERE e.event_key=?`)
-        .get(source.id) as { agent_id: string; expires_at: string | null } | null;
+        .get(source.id) as {
+        agent_id: string;
+        body: string | null;
+        expires_at: string | null;
+      } | null;
       if (
         !row ||
         principal.userId !== DEFAULT_USER_ID ||
@@ -136,27 +163,36 @@ export function sourceAccess(
         return "revoked";
       return !row.expires_at || Date.parse(row.expires_at) <= Date.parse(now)
         ? "expired"
-        : "available";
+        : row.body !== null &&
+            createHash("sha256").update(row.body).digest("hex") === source.revision
+          ? "available"
+          : "revoked";
     }
     case "qq_media": {
       const row = db
-        .query(`SELECT n.expires_at,e.agent_id FROM qq_media_notes n
+        .query(`SELECT n.expires_at,n.attempts,e.agent_id FROM qq_media_notes n
         JOIN qq_events e ON e.event_key=n.event_key WHERE n.id=?`)
         .get(source.id) as {
         expires_at: string;
         agent_id: string;
+        attempts: number;
       } | null;
       if (!row) return "expired";
       if (principal.userId !== DEFAULT_USER_ID || (owner.agentId && owner.agentId !== row.agent_id))
         return "revoked";
-      return Date.parse(row.expires_at) <= Date.parse(now) ? "expired" : "available";
+      return Date.parse(row.expires_at) <= Date.parse(now)
+        ? "expired"
+        : String(row.attempts) === source.revision
+          ? "available"
+          : "revoked";
     }
     case "qq_speech": {
       const row = db
-        .query(`SELECT s.agent_id,t.expires_at FROM qq_speech_log s
+        .query(`SELECT s.agent_id,t.body,t.expires_at FROM qq_speech_log s
         LEFT JOIN qq_speech_text t ON t.speech_id=s.id WHERE s.id=?`)
         .get(source.id) as {
         agent_id: string;
+        body: string | null;
         expires_at: string | null;
       } | null;
       if (
@@ -167,7 +203,10 @@ export function sourceAccess(
         return "revoked";
       return !row.expires_at || Date.parse(row.expires_at) <= Date.parse(now)
         ? "expired"
-        : "available";
+        : row.body !== null &&
+            createHash("sha256").update(row.body).digest("hex") === source.revision
+          ? "available"
+          : "revoked";
     }
     case "qq_sticker":
       return principal.userId === DEFAULT_USER_ID &&
