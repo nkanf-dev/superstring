@@ -10,7 +10,7 @@ No existing feature may be simplified, downgraded, or omitted. Enhancements are 
 
 - PR 1: [draft #1](https://github.com/nkanf-dev/superstring/pull/1), source f83ff30 (full suite at ecb2bad; later source-access fix has focused proof); unified runtime, background task migration, lightweight modules, authorized source-bound context inspection and run UI. Original Web/QQ main loops remain until PR 2/3.
 - PR 2: [draft #2](https://github.com/nkanf-dev/superstring/pull/2), latest source 628505b; shared Web/private host, journal, durable wake/outbox, SSE and conversation UI. The reload recovery correction has 14 focused frontend tests.
-- PR 3: implemented on codex/shared-conversations at 8fad8f0; shared Bot context, scheduling, module lifecycle/ingestion/query composition, canonical directory and complete UI draft convergence. Draft PR pending creation.
+- PR 3: implemented on codex/shared-conversations at 8fad8f0; shared Bot context, scheduling, module lifecycle/ingestion/query composition, canonical directory and complete UI draft convergence. [Draft #3](https://github.com/nkanf-dev/superstring/pull/3) is based on PR #2.
 
 ## Validation
 
