@@ -1,28 +1,24 @@
 import type { Database } from "bun:sqlite";
 import type { RuntimeConfig } from "../../../shared/contracts";
-import { qqReplyTaskPrompt } from "../../../shared/contracts/qq";
 import type { WakeSignal } from "../../../shared/contracts/conversation";
 import type { Evidence, SourceRef } from "../../../shared/contracts/evidence";
-import { AgentRuntime, type PreparedOutput } from "../../agent/agent-runtime";
+import { qqReplyTaskPrompt } from "../../../shared/contracts/qq";
+import type { AgentRuntime, PreparedOutput } from "../../agent/agent-runtime";
 import type { AgentSpec } from "../../agent/agent-specs";
 import { createBuiltInActions } from "../../agent/built-in-actions";
+import { sourceAccess } from "../../agent/context-access";
 import {
+  type ActionObservation,
   ContextEngine,
+  type ContextMaterial,
   inputUnits,
   textMessage,
   uniqueSources,
-  type ActionObservation,
-  type ContextMaterial,
 } from "../../agent/context-engine";
 import { ConversationHost } from "../../agent/conversation-host";
-import { sourceAccess } from "../../agent/context-access";
-import { SqliteMemoryModule } from "../../modules/memory-module";
-import { SqliteKnowledgeModule } from "../../modules/knowledge-module";
-import { qqMemoryScopeKeyset } from "../../services/memory-scope";
 import { AgentRunRepository } from "../../db/agent-run-repository";
-import { ConversationEventRepository } from "../../db/conversation-event-repository";
-import { OutboundIntentRepository } from "../../db/outbound-intent-repository";
-import { WakeRepository } from "../../db/wake-repository";
+import type { ConversationEventRepository } from "../../db/conversation-event-repository";
+import type { OutboundIntentRepository } from "../../db/outbound-intent-repository";
 import { readQqBinding } from "../../db/qq-binding-repository";
 import { recordQqIdleJudgement } from "../../db/qq-dispatch-repository";
 import { qqMemberLabels } from "../../db/qq-member-repository";
@@ -43,47 +39,51 @@ import {
 import { readQqSettings } from "../../db/qq-settings-repository";
 import { newestMemberMessageSeconds, ownSpeechSince } from "../../db/qq-speech-repository";
 import { DEFAULT_USER_ID, getAgentRow, type Orm } from "../../db/repositories";
+import type { WakeRepository } from "../../db/wake-repository";
 import type { ModelGateway } from "../../llm/model-gateway";
+import { SqliteKnowledgeModule } from "../../modules/knowledge-module";
+import { SqliteMemoryModule } from "../../modules/memory-module";
+import { qqMemoryScopeKeyset } from "../../services/memory-scope";
 import { captureQqTask, checkQqTask, qqConversationKey } from "../../services/qq-binding-contract";
+import { checkQqModelCapacity } from "../../services/qq-capacity-preflight";
 import {
+  type QqContextSelection,
   qqBuildTimeline,
   qqContextLimits,
   qqSelectContext,
-  type QqContextSelection,
 } from "../../services/qq-context-contract";
 import {
   attentionTriggerFilter,
   QQ_IMMEDIATE_REPLY_FRESHNESS_SECONDS,
 } from "../../services/qq-dispatch";
 import { qqJudgementQuestion } from "../../services/qq-judgement-material";
-import {
-  recallQqReplyMemory,
-  qqMemoryReadIsCurrent,
-  type QqMemoryReadSnapshot,
-} from "../../services/qq-memory-recall";
 import { prepareQqJudgement } from "../../services/qq-judgement-preparation";
-import { checkQqModelCapacity } from "../../services/qq-capacity-preflight";
+import {
+  type QqMemoryReadSnapshot,
+  qqMemoryReadIsCurrent,
+  recallQqReplyMemory,
+} from "../../services/qq-memory-recall";
 import {
   buildQqPrompt,
-  QQ_MEDIA_RULE,
   QQ_JUDGEMENT_RESPONSE_SCHEMA,
-  qqJudgeOutcome,
+  QQ_MEDIA_RULE,
+  type QqPromptInput,
   qqJudgeAllowsSpeech,
+  qqJudgeOutcome,
   qqPromptMessages,
   qqSpeakerLabel,
-  type QqPromptInput,
 } from "../../services/qq-prompt-contract";
-import { speechExpiresAt } from "../../services/qq-retention";
 import type { QqPendingReview } from "../../services/qq-reply-runner";
+import { speechExpiresAt } from "../../services/qq-retention";
 import {
   checkQqSpeechSend,
   disabledKindsFromTriggers,
   type QqSpeechKind,
 } from "../../services/qq-speaking-contract";
 import {
-  selectQqSticker,
   planQqPreparedReply,
   type QqStickerStage,
+  selectQqSticker,
 } from "../../services/qq-sticker-runner";
 import { compileSystemPrompt, runtimeFromAgent } from "../../services/runtime-config";
 
@@ -96,7 +96,7 @@ export interface OneBotPrivateHostOptions {
   orm: Orm;
   agentRuntime: AgentRuntime;
   host?: ConversationHost;
-  gateway: ModelGateway;
+  gateway: Pick<ModelGateway, "complete" | "loadedContextCapacity">;
   journal: ConversationEventRepository;
   wakes: WakeRepository;
   outbox: OutboundIntentRepository;
