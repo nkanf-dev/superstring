@@ -130,11 +130,6 @@ export function sqliteWebInitialEvidence(
       };
     },
     assertCurrent() {
-      options.assertSources?.([
-        ...input.sources,
-        ...memory.map((item) => ({ kind: "memory", id: item.id, revision: item.revision })),
-        ...knowledge.sourceRefs(input.turnId, runtime.agent_id),
-      ]);
       if (
         fingerprint !== null &&
         catalogFingerprint(options.orm, runtime.agent_id, input.sessionId) !== fingerprint
@@ -153,6 +148,12 @@ export function sqliteWebInitialEvidence(
       )
         fail("CONTEXT_SOURCE_INVALID", "上下文准备期间记忆正文或来源已变化");
       knowledge.assertAccess(input.turnId, runtime.agent_id);
+      // Preserve each backend's existing domain error before applying the shared source guard.
+      options.assertSources?.([
+        ...input.sources,
+        ...memory.map((item) => ({ kind: "memory", id: item.id, revision: item.revision })),
+        ...knowledge.sourceRefs(input.turnId, runtime.agent_id),
+      ]);
     },
   };
 }
