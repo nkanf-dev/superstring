@@ -24,6 +24,21 @@ export function runRoutes(db: Database, repository = new AgentRunRepository(db))
       .filter((run) => canReadRun(db, run.owner, principal));
     return c.json({ runs });
   });
+  router.get("/by-request", (c) => {
+    const sessionId = parseUuidParam(c.req.query("sessionId") ?? "");
+    const requestId = c.req.query("clientRequestId");
+    if (!requestId?.trim() || requestId.length > 64) throw validationFailed();
+    const turn = db
+      .query(`SELECT t.id FROM turns t JOIN sessions s ON s.id=t.session_id
+        WHERE t.session_id=? AND t.client_request_id=? AND s.user_id=?`)
+      .get(sessionId, requestId, principal.userId) as { id: string } | null;
+    const run = turn
+      ? repository
+          .listRuns({ ownerKind: "web_turn", ownerId: turn.id })
+          .find((candidate) => canReadRun(db, candidate.owner, principal))
+      : undefined;
+    return run ? c.json(run) : c.json(notFound, 404);
+  });
   router.get("/:id", (c) => {
     const run = visibleRun(db, repository, parseUuidParam(c.req.param("id")), principal);
     return run ? c.json(run) : c.json(notFound, 404);
