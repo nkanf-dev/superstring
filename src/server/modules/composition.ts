@@ -16,6 +16,7 @@ import type { ModelGateway } from "../llm/model-gateway";
 import { KnowledgeOrganizer } from "../services/knowledge-organizer";
 import { MemoryService } from "../services/memory-service";
 import type { QqObservation } from "../services/onebot-protocol";
+import { scheduleQqMemory } from "../services/qq-memory-scheduler";
 import { runtimeFromAgent } from "../services/runtime-config";
 import type {
   KnowledgeModule,
@@ -67,7 +68,8 @@ export type SqliteObservation =
       agentId: string;
       hooks?: { beforeWrite?: () => void; afterWrite?: (result: RecordedObservation) => void };
     }
-  | { kind: "web_turn"; turnId: string; agentId: string };
+  | { kind: "web_turn"; turnId: string; agentId: string }
+  | { kind: "qq_event"; eventKey: string; agentId: string };
 export interface SqliteObservationReceipt extends SourceReceipt {
   metadata: { recorded: boolean; hasText: boolean };
 }
@@ -121,6 +123,31 @@ export function createSqliteModules(options: {
       query: (input) => bind({ runtime: runtimeFor(input.agentId) }).memory.query(input),
       observe(source) {
         const payload = source.payload as SqliteObservation;
+        if (payload.kind === "qq_event") {
+          const row = options.db
+            .query(
+              "SELECT e.recorded_at,e.agent_id,t.event_key AS text_id FROM qq_events e LEFT JOIN qq_observation_text t ON t.event_key=e.event_key WHERE e.event_key=?",
+            )
+            .get(payload.eventKey) as {
+            recorded_at: string;
+            agent_id: string;
+            text_id: string | null;
+          } | null;
+          if (
+            source.source.kind !== "qq_event" ||
+            source.source.id !== payload.eventKey ||
+            !row ||
+            row.agent_id !== payload.agentId ||
+            source.source.revision !== row.recorded_at
+          )
+            fail("MEMORY_SOURCE_INVALID", "QQ记忆来源不是当前已提交的受权观察");
+          scheduleQqMemory(options.orm);
+          return {
+            source: source.source,
+            created: false,
+            metadata: { recorded: false, hasText: row.text_id !== null },
+          };
+        }
         if (payload.kind === "onebot") {
           if (
             source.source.kind !== "qq_event" ||

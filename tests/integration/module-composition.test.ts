@@ -124,6 +124,18 @@ describe("concrete module composition", () => {
     expect(first).not.toBeInstanceOf(Promise);
     expect(first.metadata).toEqual({ recorded: true, hasText: true });
     expect(h.modules.memory.observe(event).metadata.recorded).toBe(false);
+    const receipt = h.modules.memory.observe({
+      source: first.source,
+      payload: { kind: "qq_event", eventKey: first.source.id, agentId: DEFAULT_AGENT_ID },
+    });
+    expect(receipt.created).toBe(false);
+    expect(receipt.metadata.hasText).toBe(true);
+    expect(() =>
+      h.modules.memory.observe({
+        source: { ...first.source, revision: "stale" },
+        payload: { kind: "qq_event", eventKey: first.source.id, agentId: DEFAULT_AGENT_ID },
+      }),
+    ).toThrow();
     expect(h.db.query("SELECT event_key FROM qq_events").all()).toHaveLength(1);
   });
   it("uses alternate memory and knowledge modules for the initial Web context without SQLite payload parsing", async () => {
