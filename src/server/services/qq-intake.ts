@@ -40,7 +40,7 @@ import {
   type OneBotConnectionState,
   type OneBotSocketFactory,
 } from "./onebot-connection";
-import type { QqObservation, QqMessageResult } from "./onebot-protocol";
+import type { QqMessageResult, QqObservation } from "./onebot-protocol";
 import { handleQqRecordedMessage, type QqEventMediaDeps } from "./qq-event-path";
 import { createQqMediaAdapter } from "./qq-media-adapter";
 import { createQqMediaSourceFetcher } from "./qq-media-source";

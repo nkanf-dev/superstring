@@ -1,5 +1,5 @@
 import type { WakeSignal } from "../../shared/contracts/conversation";
-import { WakeRepository } from "../db/wake-repository";
+import type { WakeRepository } from "../db/wake-repository";
 export interface WakeSchedulerPolicy {
   leaseMs: number;
   renewMs: number;

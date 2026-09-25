@@ -12,12 +12,12 @@
 // material 永远走 user 段（`buildQqPrompt` 强制），§6.1 的"资料不提升为系统权限"因此是结构性的。
 
 import type { Database } from "bun:sqlite";
-import type { SourceRef } from "../../shared/contracts/evidence";
-import { selectionSources } from "../modules/provenance";
 import type { ContentItem } from "../../shared/contracts/content";
+import type { SourceRef } from "../../shared/contracts/evidence";
 import { catalogByScopeKeys, type MemoryItem } from "../db/context-repository";
 import { readQqOwnerIdentity } from "../db/qq-owner-repository";
 import type { Orm } from "../db/repositories";
+import { selectionSources } from "../modules/provenance";
 import { contextKeywords } from "./context-builder";
 import { knowledgeCost, knowledgeMessages, qqKnowledgeItems } from "./knowledge-context";
 import { qqMemoryScopeKeyset } from "./memory-scope";

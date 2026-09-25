@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { projectConversationEvent } from "../../src/server/conversation/conversation-view";
+import { AgentRunRepository } from "../../src/server/db/agent-run-repository";
 import { ConversationEventRepository } from "../../src/server/db/conversation-event-repository";
 import { OutboundIntentRepository } from "../../src/server/db/outbound-intent-repository";
-import { WakeRepository } from "../../src/server/db/wake-repository";
-import { AgentRunRepository } from "../../src/server/db/agent-run-repository";
 import {
   createSession,
   DEFAULT_AGENT_ID,
@@ -13,12 +13,13 @@ import {
   saveFailedAssistantMessage,
 } from "../../src/server/db/repositories";
 import { openBusinessDb } from "../../src/server/db/schema-gate";
-import { projectConversationEvent } from "../../src/server/conversation/conversation-view";
+import { WakeRepository } from "../../src/server/db/wake-repository";
 import {
   ConversationEventsSchema,
   ConversationListSchema,
   DeliverySchema,
 } from "../../src/shared/contracts/conversation";
+
 const handles: ReturnType<typeof openBusinessDb>[] = [];
 afterEach(() => {
   for (const h of handles.splice(0)) h.close();

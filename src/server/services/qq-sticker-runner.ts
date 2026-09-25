@@ -21,16 +21,15 @@
 //
 // This module cannot send: no transport, no ledger, no speech record, no platform request.
 
-import type { SourceRef } from "../../shared/contracts/evidence";
 import { z } from "zod";
+import type { SourceRef } from "../../shared/contracts/evidence";
 import type { LeafAgentRuntime } from "../agent/agent-runtime";
-import { DEFAULT_USER_ID } from "../db/repositories";
 import { readQqBinding } from "../db/qq-binding-repository";
 import { qqMemberLabels } from "../db/qq-member-repository";
 import type { QqConversationScope } from "../db/qq-observation-repository";
 import { readQqScheme, schemeOutputReserve, schemePrompts } from "../db/qq-scheme-repository";
 import { listQqStickerAssets, type QqStickerAssetView } from "../db/qq-sticker-repository";
-import { getAgentRow, type Orm } from "../db/repositories";
+import { DEFAULT_USER_ID, getAgentRow, type Orm } from "../db/repositories";
 import type { ModelGateway } from "../llm/model-gateway";
 import { checkQqModelCapacity } from "./qq-capacity-preflight";
 import { ContextMessageSchema } from "./qq-context-contract";

@@ -1,14 +1,6 @@
-import { KnowledgeRepository } from "../../src/server/db/knowledge-repository";
-import {
-  createQqStickerCollection,
-  importQqSticker,
-  setQqStickerEnabled,
-} from "../../src/server/db/qq-sticker-repository";
-import { sourceAccess } from "../../src/server/agent/context-access";
-import { qqStickerSelectionForScheme } from "../../src/server/services/qq-sticker-candidates";
-import { qqStickerUsable } from "../../src/server/services/qq-sticker-contract";
 import { afterEach, describe, expect, it } from "bun:test";
 import { AgentRuntime } from "../../src/server/agent/agent-runtime";
+import { sourceAccess } from "../../src/server/agent/context-access";
 import type { ModelPort, ModelRequest } from "../../src/server/agent/model-port";
 import { OneBot11Adapter } from "../../src/server/channels/onebot11/adapter";
 import { OneBotPrivateHost } from "../../src/server/channels/onebot11/private-host";
@@ -16,10 +8,15 @@ import { OutboundDelivery } from "../../src/server/conversation/outbound-deliver
 import { WakeScheduler } from "../../src/server/conversation/wake-scheduler";
 import { AgentRunRepository } from "../../src/server/db/agent-run-repository";
 import { ConversationEventRepository } from "../../src/server/db/conversation-event-repository";
+import { KnowledgeRepository } from "../../src/server/db/knowledge-repository";
 import { OutboundIntentRepository } from "../../src/server/db/outbound-intent-repository";
-import { WakeRepository } from "../../src/server/db/wake-repository";
 import { createQqScheme, updateQqScheme } from "../../src/server/db/qq-scheme-repository";
 import { updateQqSettings } from "../../src/server/db/qq-settings-repository";
+import {
+  createQqStickerCollection,
+  importQqSticker,
+  setQqStickerEnabled,
+} from "../../src/server/db/qq-sticker-repository";
 import {
   DEFAULT_AGENT_ID,
   DEFAULT_USER_ID,
@@ -27,13 +24,17 @@ import {
 } from "../../src/server/db/repositories";
 import * as schema from "../../src/server/db/schema";
 import { openBusinessDb } from "../../src/server/db/schema-gate";
+import { WakeRepository } from "../../src/server/db/wake-repository";
 import type { ModelGateway } from "../../src/server/llm/model-gateway";
-import { recordInbound } from "../../src/server/services/qq-intake";
 import { normalizeOneBotMessage } from "../../src/server/services/onebot-protocol";
 import {
-  peekQqImmediateReplyTask,
   nextQqImmediateReplyTask,
+  peekQqImmediateReplyTask,
 } from "../../src/server/services/qq-dispatch";
+import { recordInbound } from "../../src/server/services/qq-intake";
+import { qqStickerSelectionForScheme } from "../../src/server/services/qq-sticker-candidates";
+import { qqStickerUsable } from "../../src/server/services/qq-sticker-contract";
+
 const handles: ReturnType<typeof openBusinessDb>[] = [];
 afterEach(() => {
   for (const h of handles.splice(0)) h.close();
