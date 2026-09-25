@@ -74,7 +74,7 @@ export function sourceAccess(
     case "memory": {
       const row = db.query("SELECT user_id,agent_id,status FROM memory_entries WHERE id=?")
         .get(source.id) as { user_id: string; agent_id: string; status: string } | null;
-      return row && row.user_id === principal.userId && (row.status === "active" || row.status === "replaced") &&
+      return row && row.user_id === principal.userId && row.status !== "invalid" &&
         (!owner.agentId || owner.agentId === row.agent_id) ? "available" : "revoked";
     }
     case "knowledge_document": {

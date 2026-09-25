@@ -14,6 +14,6 @@ No existing feature may be simplified, downgraded, or omitted. Enhancements are 
 
 ## Validation
 
-Baseline on d3167e4 after installing declared missing dependencies: typecheck/check passed; 132 focused integration tests passed; 416 frontend tests across 35 files passed.
+Baseline on d3167e4 after installing declared missing dependencies: typecheck/check passed; 1,490 full integration tests across 82 files passed (including 132 focused tests); 416 frontend tests across 35 files passed.
 
 Implementation validation pending. Live model, OneBot, browser, and Windows evidence must be reported separately from automated tests.
