@@ -635,6 +635,115 @@ describe("unified AgentRuntime", () => {
     await expect(runtime.run(spec, direct)).rejects.toMatchObject({ code: "MODEL_EMPTY_RESPONSE" });
   });
 
+  it("commits a deliberately suppressed buffered plan as no_output without retry or phantom output IDs", async () => {
+    let decisions = 0;
+    const { h, runtime, repository } = setup({
+      async complete() {
+        decisions++;
+        return '{"kind":"final","outputs":[{"kind":"generate","targetId":"web","instructions":""}]}';
+      },
+      async *streamText() {
+        yield "";
+      },
+    });
+    h.db.exec("CREATE TABLE test_ack (run_id TEXT PRIMARY KEY)");
+    const events: RunEvent[] = [];
+    let commits = 0;
+    const result = await runtime.run(
+      { ...spec, generation: { allowEmpty: true } },
+      {
+        ...direct,
+        outputMode: "buffered",
+        async reconsider(outputs) {
+          expect(outputs[0]).toMatchObject({ status: "prepared", text: "" });
+          return "no_output";
+        },
+        async commitOutputs(outputs, runId, terminal) {
+          commits++;
+          expect(outputs).toEqual([]);
+          expect(terminal).toMatchObject({ status: "no_output", event: { type: "no_output" } });
+          return h.db
+            .transaction(() => {
+              h.db.query("INSERT INTO test_ack VALUES (?)").run(runId);
+              return repository.finishRun(runId, terminal.status, terminal.event, terminal.at);
+            })
+            .immediate();
+        },
+        onEvent(event) {
+          if (event.type === "no_output") {
+            expect(h.db.query("SELECT run_id FROM test_ack").get()).toEqual({
+              run_id: event.runId,
+            });
+            expect(repository.getRun(event.runId)?.status).toBe("no_output");
+          }
+          events.push(event);
+        },
+      },
+    );
+    expect(decisions).toBe(1);
+    expect(commits).toBe(1);
+    expect(result).toMatchObject({ status: "no_output", outputs: [] });
+    expect(repository.getRun(result.runId)).toMatchObject({ status: "no_output", outputs: [] });
+    expect(events.filter((event) => event.type === "no_output")).toHaveLength(1);
+    expect(events.some((event) => event.type === "completed" || event.type === "failed")).toBe(
+      false,
+    );
+  });
+
+  it("retains per-target blocked outcomes alongside deliverable outputs", async () => {
+    const { runtime, repository } = setup({
+      async complete() {
+        return JSON.stringify({
+          kind: "final",
+          outputs: [
+            { kind: "inline", targetId: "web", text: "", stickerIds: [] },
+            { kind: "inline", targetId: "peer", text: "deliverable", stickerIds: [] },
+          ],
+        });
+      },
+    });
+    const result = await runtime.run(spec, {
+      ...direct,
+      authorizedTargets: ["web", "peer"],
+      outputMode: "buffered",
+      async reconsider(outputs) {
+        outputs[0].status = "blocked";
+        outputs[0].code = "NO_DELIVERABLE_PARTS";
+        return false;
+      },
+    });
+    expect(result.status).toBe("completed");
+    expect(repository.getRun(result.runId)?.outputs).toMatchObject([
+      { targetId: "web", status: "blocked", code: "NO_DELIVERABLE_PARTS" },
+      { targetId: "peer", status: "prepared" },
+    ]);
+  });
+
+  it("cannot suppress an already streamed response as no_output", async () => {
+    const { runtime, repository } = setup({
+      async complete() {
+        return '{"kind":"final","outputs":[{"kind":"generate","targetId":"web","instructions":""}]}';
+      },
+    });
+    let committed = false;
+    await expect(
+      runtime.run(spec, {
+        ...direct,
+        async reconsider() {
+          return "no_output";
+        },
+        async commitOutputs() {
+          committed = true;
+          return undefined;
+        },
+      }),
+    ).rejects.toMatchObject({ code: "AGENT_STREAM_RECONSIDERED" });
+    expect(committed).toBe(false);
+    expect(repository.listRuns({ ownerKind: owner.kind, ownerId: owner.id })[0].status).toBe(
+      "failed",
+    );
+  });
+
   it("ModelPort preserves the gateway structured-output contract and default model", async () => {
     const { repository } = setup();
     let received: unknown;

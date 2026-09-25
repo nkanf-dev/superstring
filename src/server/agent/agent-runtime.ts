@@ -72,8 +72,11 @@ export interface ConversationInput {
   ) => Promise<{ outputId: string } | { blocked: true; code: string }>;
   /** Last observation checkpoint before a final/none decision becomes externally visible. */
   beforeFinal?: (drafts: readonly OutputDraft[], signal: AbortSignal) => Promise<boolean>;
-  /** Hosts check new relevant observations before committing. True returns to deciding. */
-  reconsider?: (outputs: readonly PreparedOutput[], signal: AbortSignal) => Promise<boolean>;
+  /** True re-observes; no_output suppresses a buffered plan that has no deliverable parts. */
+  reconsider?: (
+    outputs: readonly PreparedOutput[],
+    signal: AbortSignal,
+  ) => Promise<boolean | "no_output">;
   /** Host transaction for partial text/error state and the same run terminal. */
   commitFailure?: (
     error: unknown,
@@ -413,12 +416,17 @@ export class AgentRuntime {
           }
         }
         active.signal.throwIfAborted();
-        if (await input.reconsider?.(outputs, active.signal)) {
+        const reconsidered = await input.reconsider?.(outputs, active.signal);
+        if (reconsidered) {
           if (input.outputMode === "stream")
             throw new AgentRuntimeError(
               "AGENT_STREAM_RECONSIDERED",
               "Already streamed output cannot be replaced",
             );
+          if (reconsidered === "no_output") {
+            await this.commitAndFinish(active, input, [], "no_output", { type: "no_output" });
+            return { runId: active.runId, status: "no_output", outputs: [] };
+          }
           continue;
         }
         if (!outputs.some((output) => output.status === "prepared")) {
