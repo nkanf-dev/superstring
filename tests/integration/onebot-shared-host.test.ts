@@ -482,3 +482,58 @@ describe("shared configuration and races", () => {
     expect(h.wakes.peek({ at: h.now(), cause: "idle_topic" })).toBeNull();
   });
 });
+describe("failed generation and observation epochs", () => {
+  it("all failed generations fail the run and leave wake/source unacknowledged", async () => {
+    const h = setup({
+      complete: async () => generate(["20002"]),
+      async *streamText() {
+        throw new Error("MODEL_FAILURE");
+        yield "never";
+      },
+    });
+    h.receive("1", "20002", true);
+    await expect(h.activate()).rejects.toThrow("No output could be prepared");
+    expect(h.outbox.list({})).toEqual([]);
+    expect(h.journal.ensureOneBot(bindingId)!.consumedSeq).toBe(0);
+    expect(h.db.query("SELECT status FROM agent_runs WHERE spec_id='onebot.main'").get()).toEqual({
+      status: "failed",
+    });
+  });
+  it("new related input requires a score bound to the new observation epoch", async () => {
+    let h: ReturnType<typeof setup>;
+    let next = 0,
+      scores = 0,
+      generations = 0;
+    const epochs: number[] = [];
+    h = setup({
+      complete: async (req) => {
+        if ((req.responseSchema?.properties as Record<string, unknown> | undefined)?.score) {
+          scores++;
+          return '{"score":9}';
+        }
+        next++;
+        const system = JSON.stringify(req.messages[0]);
+        const epoch = Number(system.match(/当前观察序列：(\d+)/)?.[1]);
+        epochs.push(epoch);
+        return next === 1 || next === 3
+          ? '{"kind":"invoke","name":"speech.evaluate","arguments":{}}'
+          : generate(["20002"]);
+      },
+      async *streamText() {
+        generations++;
+        if (generations === 1) {
+          h.receive("2", "20002", false, "new material");
+          h.clock.seconds += 2;
+        }
+        yield "answer";
+      },
+    });
+    h.receive("1");
+    h.clock.seconds += 2;
+    expect((await h.activate()).status).toBe("completed");
+    expect(scores).toBe(2);
+    expect(generations).toBe(2);
+    expect(epochs[2]!).toBeGreaterThan(epochs[0]!);
+    expect(h.outbox.list({})).toHaveLength(1);
+  });
+});

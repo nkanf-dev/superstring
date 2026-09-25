@@ -682,64 +682,72 @@ describe("private feature preservation", () => {
 });
 
 describe("private initiative and cancellation", () => {
-  it("uses the global judgement model with memory and granted knowledge in the original score prompt", async () => {
-    let stage = 0;
-    let judgement: ModelRequest | undefined;
-    const h = setup({
-      complete: async (req) => {
-        if ((req.responseSchema?.properties as Record<string, unknown> | undefined)?.ids) {
-          const text = req.messages[1]!.content.find((p) => p.kind === "text");
-          const data = JSON.parse(text?.kind === "text" ? text.text : "{}");
-          return JSON.stringify({ ids: data.candidates.map((c: { id: string }) => c.id) });
-        }
-        if ((req.responseSchema?.properties as Record<string, unknown> | undefined)?.score) {
-          judgement = req;
-          return '{"score":0}';
-        }
-        return ++stage === 1
-          ? '{"kind":"invoke","name":"speech.evaluate","arguments":{}}'
-          : '{"kind":"none"}';
-      },
-    });
-    setMemoryMode(h, "full_body");
-    addMemory(h);
-    const repo = new KnowledgeRepository(h.db);
-    const doc = repo.importDocument({
-      name: "apples manual",
-      category_id: "default",
-      original_text: "apples knowledge line",
-    });
-    repo.replaceGrants(doc.id, doc.revision, [DEFAULT_AGENT_ID]);
-    updateQqSettings(h.orm, { judgementModelName: "global-judge", expectedRevision: 2 });
-    h.receive("1", "apples");
-    h.db.exec("UPDATE wake_signals SET status='no_output'");
-    h.clock.seconds += 16 * 60;
-    const c = h.journal.ensureOneBot(bindingId)!;
-    h.wakes.enqueue({
-      conversationId: c.id,
-      cause: "idle_topic",
-      throughSeq: c.lastSeq,
-      dedupeKey: "idle-eval",
-      readyAt: stamp(h.clock.seconds),
-      at: stamp(h.clock.seconds),
-      priority: 0,
-    });
-    const result = await activate(h);
-    expect(result.status).toBe("no_output");
-    expect(judgement?.model).toBe("global-judge");
-    const text = JSON.stringify(judgement?.messages);
-    expect(text).toContain("apples are green");
-    expect(text).toContain("apples knowledge line");
-    expect(h.outbox.list({})).toEqual([]);
-    const sources = h.db
-      .query(
-        "SELECT c.source_refs FROM context_snapshots c JOIN agent_steps s ON s.step_id=c.step_id JOIN agent_runs r ON r.run_id=s.run_id WHERE r.spec_id='onebot.initiative.evaluate'",
-      )
-      .get() as { source_refs: string };
-    expect(JSON.parse(sources.source_refs).map((r: { kind: string }) => r.kind)).toEqual(
-      expect.arrayContaining(["memory", "knowledge_document", "knowledge_grant", "qq_observation"]),
-    );
-  });
+  it.each(["off", "full_body"])(
+    "uses the global judgement model and respects %s in the score context",
+    async (mode) => {
+      let stage = 0;
+      let judgement: ModelRequest | undefined;
+      const h = setup({
+        complete: async (req) => {
+          if ((req.responseSchema?.properties as Record<string, unknown> | undefined)?.ids) {
+            const text = req.messages[1]!.content.find((p) => p.kind === "text");
+            const data = JSON.parse(text?.kind === "text" ? text.text : "{}");
+            return JSON.stringify({ ids: data.candidates.map((c: { id: string }) => c.id) });
+          }
+          if ((req.responseSchema?.properties as Record<string, unknown> | undefined)?.score) {
+            judgement = req;
+            return '{"score":0}';
+          }
+          return ++stage === 1
+            ? '{"kind":"invoke","name":"speech.evaluate","arguments":{}}'
+            : '{"kind":"none"}';
+        },
+      });
+      setMemoryMode(h, mode);
+      addMemory(h);
+      const repo = new KnowledgeRepository(h.db);
+      const doc = repo.importDocument({
+        name: "apples manual",
+        category_id: "default",
+        original_text: "apples knowledge line",
+      });
+      repo.replaceGrants(doc.id, doc.revision, [DEFAULT_AGENT_ID]);
+      updateQqSettings(h.orm, { judgementModelName: "global-judge", expectedRevision: 2 });
+      h.receive("1", "apples");
+      h.db.exec("UPDATE wake_signals SET status='no_output'");
+      h.clock.seconds += 16 * 60;
+      const c = h.journal.ensureOneBot(bindingId)!;
+      h.wakes.enqueue({
+        conversationId: c.id,
+        cause: "idle_topic",
+        throughSeq: c.lastSeq,
+        dedupeKey: "idle-eval",
+        readyAt: stamp(h.clock.seconds),
+        at: stamp(h.clock.seconds),
+        priority: 0,
+      });
+      const result = await activate(h);
+      expect(result.status).toBe("no_output");
+      expect(judgement?.model).toBe("global-judge");
+      const text = JSON.stringify(judgement?.messages);
+      expect(text.includes("apples are green")).toBe(mode !== "off");
+      expect(text).toContain("apples knowledge line");
+      expect(h.outbox.list({})).toEqual([]);
+      const sources = h.db
+        .query(
+          "SELECT c.source_refs FROM context_snapshots c JOIN agent_steps s ON s.step_id=c.step_id JOIN agent_runs r ON r.run_id=s.run_id WHERE r.spec_id='onebot.initiative.evaluate'",
+        )
+        .get() as { source_refs: string };
+      expect(JSON.parse(sources.source_refs).map((r: { kind: string }) => r.kind)).toEqual(
+        expect.arrayContaining([
+          ...(mode === "off" ? [] : ["memory"]),
+          "knowledge_document",
+          "knowledge_grant",
+          "qq_observation",
+        ]),
+      );
+    },
+  );
   it("cancellation during generation records a cancelled run without advancing source cursor", async () => {
     const controller = new AbortController();
     const h = setup({
