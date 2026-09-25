@@ -230,6 +230,84 @@ describe("durable per-part delivery", () => {
     await h.host.activate(wake, new AbortController().signal);
     return { ...h, id: h.outbox.list({})[0]!.id };
   }
+  it.each(["confirmed", "unknown"] as const)(
+    "stop settles an in-flight %s receipt and preserves unstarted outputs",
+    async (status) => {
+      const h = await prepared();
+      const row = h.outbox.row(h.id)!;
+      const second = h.outbox.commit({
+        runId: row.run_id,
+        conversationId: row.conversation_id,
+        ordinal: 1,
+        target: JSON.parse(row.target),
+        speechKind: row.speech_kind,
+        sourceThroughSeq: row.source_through_seq,
+        deliverBy: row.deliver_by,
+        createdAt: row.created_at,
+        expiresAt: row.expires_at,
+        parts: [{ kind: "text", text: "another recipient" }],
+      });
+      let settle!: (
+        value: { kind: "confirmed"; messageId: string } | { kind: "unknown"; reason: "timeout" },
+      ) => void;
+      let began!: () => void;
+      const sending = new Promise<void>((resolve) => {
+        began = resolve;
+      });
+      let calls = 0;
+      const common = {
+        orm: h.orm,
+        repository: h.outbox,
+        journal: h.journal,
+        stickerFile: () => null,
+        authorize: () => true,
+        now: () => stamp(),
+      };
+      const delivery = new OutboundDelivery({
+        ...common,
+        port: {
+          async send() {
+            calls++;
+            began();
+            return await new Promise((resolve) => {
+              settle = resolve;
+            });
+          },
+        },
+      });
+      const running = delivery.runOnce();
+      await sending;
+      delivery.stop();
+      settle(
+        status === "confirmed"
+          ? { kind: "confirmed", messageId: "first" }
+          : { kind: "unknown", reason: "timeout" },
+      );
+      await running;
+      expect(calls).toBe(1);
+      expect(h.outbox.get(h.id)!.parts.map((part) => part.status)).toEqual(
+        status === "confirmed" ? ["confirmed", "planned"] : ["unknown", "not_sent"],
+      );
+      expect(h.outbox.get(second.id)?.status).toBe("planned");
+      expect(await delivery.runOnce()).toBe(0);
+      await delivery.deliver(second.id);
+      expect(calls).toBe(1);
+      const resumed = new OutboundDelivery({
+        ...common,
+        port: {
+          async send() {
+            calls++;
+            return { kind: "confirmed", messageId: `next-${calls}` };
+          },
+        },
+      });
+      resumed.recover();
+      await resumed.runOnce();
+      expect(h.outbox.get(second.id)?.status).toBe("confirmed");
+      expect(calls).toBe(status === "confirmed" ? 3 : 2);
+      expect(h.outbox.get(h.id)?.status).toBe(status);
+    },
+  );
   it("writes sending before network, projects receipts once, appends delivery revisions", async () => {
     const h = await prepared();
     let sends = 0;

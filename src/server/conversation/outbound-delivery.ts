@@ -13,6 +13,11 @@ import {
 
 /** Durable side effects. No model call can occur inside a transport transaction. */
 export class OutboundDelivery {
+  private stopped = false;
+  /** Finish an in-flight receipt, while leaving unstarted work durable for a new worker. */
+  stop(): void {
+    this.stopped = true;
+  }
   constructor(
     private readonly options: {
       orm: Orm;
@@ -108,7 +113,7 @@ export class OutboundDelivery {
     const { repository, journal } = this.options;
     let row = repository.row(id);
     if (!row) return null;
-    while (["planned", "delivering"].includes(row.status)) {
+    while (!this.stopped && ["planned", "delivering"].includes(row.status)) {
       const delivery = repository.get(id)!;
       const target = JSON.parse(row.target) as OutboundTarget;
       const changed = journal
@@ -195,6 +200,7 @@ export class OutboundDelivery {
   async runOnce(): Promise<number> {
     let count = 0;
     for (const d of this.options.repository.pending()) {
+      if (this.stopped) break;
       await this.deliver(d.id);
       count++;
     }
