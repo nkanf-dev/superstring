@@ -22,8 +22,9 @@ export function createBootstrapActions(
             loadBrowserStateStorage(() => get().apiClient.getBrowserStateConfig()),
           ]);
         const agents = agentsResult.status === "fulfilled" ? agentsResult.value : [];
-        const conversations =
-          sessionsResult.status === "fulfilled" ? sessionsResult.value.items : [];
+        let conversations = sessionsResult.status === "fulfilled" ? sessionsResult.value.items : [];
+        let directoryCursor =
+          sessionsResult.status === "fulfilled" ? sessionsResult.value.nextCursor : null;
         const catalog = catalogResult.status === "fulfilled" ? catalogResult.value : null;
         const browserStateStorage =
           storageResult.status === "fulfilled" ? storageResult.value : null;
@@ -36,11 +37,35 @@ export function createBootstrapActions(
         const savedConversation = await browserStateStorage
           ?.read("superstring-conversation")
           .catch(() => null);
-        const selected =
-          conversations.find((item) => item.id === savedConversation) ??
-          conversations.find((item) => item.channel === "web" && item.sourceId === savedSession) ??
-          conversations[0] ??
-          null;
+        let restorationError: string | null = null;
+        // The former session list was unpaged. Preserve the saved choice even when it is on a
+        // later canonical page; only fetch onward while a persisted selection is still missing.
+        const hasSavedSelection = () =>
+          savedConversation
+            ? conversations.some((item) => item.id === savedConversation)
+            : conversations.some(
+                (item) => item.channel === "web" && item.sourceId === savedSession,
+              );
+        while ((savedConversation || savedSession) && !hasSavedSelection() && directoryCursor) {
+          try {
+            const page = await get().apiClient.listConversations({ cursor: directoryCursor });
+            conversations = [
+              ...new Map([...conversations, ...page.items].map((item) => [item.id, item])).values(),
+            ];
+            directoryCursor = page.nextCursor;
+          } catch (reason) {
+            restorationError = errorText(reason);
+            break;
+          }
+        }
+        const selected = restorationError
+          ? null
+          : (conversations.find((item) => item.id === savedConversation) ??
+            conversations.find(
+              (item) => item.channel === "web" && item.sourceId === savedSession,
+            ) ??
+            conversations[0] ??
+            null);
         const providers = providersResult.status === "fulfilled" ? providersResult.value : [];
         const local = [...new Set(catalog?.models ?? [])];
         const external = [
@@ -55,13 +80,14 @@ export function createBootstrapActions(
           .filter((result): result is PromiseRejectedResult => result.status === "rejected")
           .map((result) => errorText(result.reason));
         if (catalogFailure !== null && external.length === 0) failures.push(catalogFailure);
+        if (restorationError) failures.push(restorationError);
         set({
           status: "ready",
           agents,
           summaryById: Object.fromEntries(conversations.map((item) => [item.id, item])),
           directoryIds: conversations.map((item) => item.id),
-          directoryCursor:
-            sessionsResult.status === "fulfilled" ? sessionsResult.value.nextCursor : null,
+          directoryCursor,
+          directoryError: restorationError,
           sessionConversationIds: Object.fromEntries(
             conversations
               .filter((item) => item.channel === "web")

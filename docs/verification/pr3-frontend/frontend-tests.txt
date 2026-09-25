@@ -1,0 +1,13 @@
+
+ RUN  v5.0.0 /Users/nkanf/clones/superstring-worktrees/pr3-conversation-ui
+
+
+ Test Files  42 passed (42)
+      Tests  466 passed (466)
+   Start at  04:23:47
+   Duration  24.24s (tests 44%, environment 36%, import 17%, transform 3%)
+
+Environment  jsdom was created 42 times · 7.46s total, 36% of tracked time
+             create it once per worker with pool: 'vmThreads' (keeps per-file isolation) or isolate: false (shares it across files)
+             learn more: https://vitest.dev/guide/improving-performance#test-environments
+

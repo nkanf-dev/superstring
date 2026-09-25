@@ -15,12 +15,13 @@ const group = {
   topology: "shared" as const,
   title: "同事群",
 };
-beforeEach(() =>
+beforeEach(() => {
+  localStorage.clear();
   store.getState().resetForTests({
     listMessages: async () => [],
     getSessionRuntime: async () => null,
-  } as unknown as SuperstringApi),
-);
+  } as unknown as SuperstringApi);
+});
 afterEach(cleanup);
 
 it("one directory retains empty Web, direct and shared entries through pagination", async () => {
@@ -113,4 +114,63 @@ it("failed list reads preserve known entries and expose a real error", async () 
   render(<ConversationList />);
   expect(screen.getByRole("button", { name: "同事群" })).toBeTruthy();
   expect(screen.getByRole("alert").textContent).toContain("offline");
+});
+
+it("bootstrap restores a saved canonical group beyond the first directory page", async () => {
+  const { createBrowserStateStorage } = await import("../../src/web/browser-state");
+  const config = {
+    secret: "directory-test-secret",
+    storage_keys: { session: "superstring-session" as const, agent: "superstring-agent" as const },
+  };
+  await createBrowserStateStorage(config).write("superstring-conversation", group.id);
+  const list = vi
+    .fn()
+    .mockResolvedValueOnce({ items: [web], nextCursor: "older" })
+    .mockResolvedValueOnce({ items: [group], nextCursor: "oldest" });
+  store.setState({
+    apiClient: {
+      ...store.getState().apiClient,
+      listConversations: list,
+      listAgents: async () => [],
+      listModels: async () => ({ models: [] }),
+      listModelProviders: async () => [],
+      getBrowserStateConfig: async () => config,
+    } as unknown as SuperstringApi,
+  });
+  await store.getState().bootstrap();
+  expect(list).toHaveBeenLastCalledWith({ cursor: "older" });
+  expect(store.getState().currentConversationId).toBe(group.id);
+  expect(store.getState().directoryIds).toEqual([web.id, group.id]);
+  expect(store.getState().directoryCursor).toBe("oldest");
+  localStorage.removeItem("superstring-conversation");
+});
+
+it("a failed later directory page preserves the saved choice and exposes the restoration error", async () => {
+  const { createBrowserStateStorage } = await import("../../src/web/browser-state");
+  const config = {
+    secret: "directory-error-test",
+    storage_keys: { session: "superstring-session" as const, agent: "superstring-agent" as const },
+  };
+  const storage = createBrowserStateStorage(config);
+  await storage.write("superstring-conversation", group.id);
+  const list = vi
+    .fn()
+    .mockResolvedValueOnce({ items: [web], nextCursor: "older" })
+    .mockRejectedValueOnce(new Error("Directory unavailable"));
+  store.setState({
+    apiClient: {
+      ...store.getState().apiClient,
+      listConversations: list,
+      listAgents: async () => [],
+      listModels: async () => ({ models: [] }),
+      listModelProviders: async () => [],
+      getBrowserStateConfig: async () => config,
+    } as unknown as SuperstringApi,
+  });
+  await store.getState().bootstrap();
+  expect(store.getState().status).toBe("ready");
+  expect(store.getState().currentConversationId).toBeNull();
+  expect(store.getState().directoryIds).toEqual([web.id]);
+  expect(store.getState().directoryError).toBe("Directory unavailable");
+  expect(await storage.read("superstring-conversation")).toBe(group.id);
 });
