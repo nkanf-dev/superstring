@@ -12,6 +12,8 @@
 // material 永远走 user 段（`buildQqPrompt` 强制），§6.1 的"资料不提升为系统权限"因此是结构性的。
 
 import type { Database } from "bun:sqlite";
+import type { SourceRef } from "../../shared/contracts/evidence";
+import { selectionSources } from "../modules/provenance";
 import type { ContentItem } from "../../shared/contracts/content";
 import { catalogByScopeKeys, type MemoryItem } from "../db/context-repository";
 import { readQqOwnerIdentity } from "../db/qq-owner-repository";
@@ -44,10 +46,15 @@ export function qqJudgementQuestion(texts: readonly (string | null)[]): string {
  */
 export function qqJudgementMaterial(
   orm: Orm,
-  input: { readonly binding: QqBinding; readonly question: string },
+  input: {
+    readonly binding: QqBinding;
+    readonly question: string;
+    onSources?: (sources: SourceRef[]) => void;
+  },
 ): readonly QqPromptMaterial[] {
   return qqPromptMaterial(orm, {
     binding: input.binding,
+    onSources: input.onSources,
     question: input.question,
     memoryTokens: QQ_JUDGEMENT_MEMORY_TOKENS,
     knowledgeTokens: QQ_JUDGEMENT_KNOWLEDGE_TOKENS,
@@ -67,16 +74,24 @@ export function qqPromptMaterial(
     readonly question: string;
     readonly memoryTokens: number;
     readonly knowledgeTokens: number;
+    onSources?: (sources: SourceRef[]) => void;
   },
 ): readonly QqPromptMaterial[] {
   const material: QqPromptMaterial[] = [];
-  const memory = memoryMaterial(orm, input.binding, input.question, input.memoryTokens);
+  const memory = memoryMaterial(
+    orm,
+    input.binding,
+    input.question,
+    input.memoryTokens,
+    input.onSources,
+  );
   if (memory !== null) material.push(memory);
   const knowledge = knowledgeMaterial(
     orm,
     input.binding.agentId,
     input.question,
     input.knowledgeTokens,
+    input.onSources,
   );
   if (knowledge !== null) material.push(knowledge);
   return Object.freeze(material);
@@ -105,6 +120,7 @@ function memoryMaterial(
   binding: QqBinding,
   question: string,
   budgetTokens: number,
+  onSources?: (sources: SourceRef[]) => void,
 ): QqPromptMaterial | null {
   try {
     const access = resolveQqMemoryAccess(binding, readQqOwnerIdentity(orm));
@@ -125,6 +141,7 @@ function memoryMaterial(
       const next = cost + estimateTokens(line);
       if (next > budgetTokens) break;
       lines.push(line);
+      onSources?.([{ kind: "memory", id: item.id, revision: item.revision }]);
       cost = next;
     }
     if (lines.length === 0) return null;
@@ -152,6 +169,7 @@ function knowledgeMaterial(
   agentId: string,
   question: string,
   budgetTokens: number,
+  onSources?: (sources: SourceRef[]) => void,
 ): QqPromptMaterial | null {
   try {
     const items = qqKnowledgeItems(rawDatabase(orm), agentId, question);
@@ -166,6 +184,7 @@ function knowledgeMaterial(
     }
     const message = knowledgeMessages(kept)[0];
     if (message === undefined) return null;
+    onSources?.(selectionSources(orm, [{ sources: kept }], agentId));
     return Object.freeze({ title: "参考资料", body: message.content });
   } catch (error) {
     console.warn(`[qq-knowledge] 判断不读资料：${reason(error)}`);

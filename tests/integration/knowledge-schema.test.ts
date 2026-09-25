@@ -168,8 +168,14 @@ const v39 = readFileSync(
   path.join(import.meta.dir, "../../migrations/versions/0039_agent_runs.sql"),
   "utf8",
 );
-const v40 = readFileSync(path.join(import.meta.dir, "../../migrations/versions/0040_conversation_wakes.sql"),"utf8");
-const v41 = readFileSync(path.join(import.meta.dir, "../../migrations/versions/0041_outbound_intents.sql"),"utf8");
+const v40 = readFileSync(
+  path.join(import.meta.dir, "../../migrations/versions/0040_conversation_wakes.sql"),
+  "utf8",
+);
+const v41 = readFileSync(
+  path.join(import.meta.dir, "../../migrations/versions/0041_outbound_intents.sql"),
+  "utf8",
+);
 const ddl = (db: Database) =>
   db
     .query(
@@ -327,7 +333,7 @@ describe("frozen schema defaults and product initialization", () => {
     // v39: unified Agent runs, steps, source-bound context snapshots and event journal.
     "409b5450681e00f01e22d1e2c384e0bede564d2f3b3d2a2f047ae460a4f2f9db",
     "fcba738a70c034b036b2a21a3fbee4e57cc08980b2fe631cce5365c94ee567e0",
-    "ad03500caa1ffef0fde806906d219868139972c1ee7d02abe20840a975e920af",
+    "696f58d0123eaa43a5d9e70422e2ccf7fba1a4218302d2eea1aaf3338dd07075",
   ];
   // The loop is driven BY the fingerprint list, not by a hand-written run of numbers: the two were
   // maintained separately once, the loop stopped one version short, and the newest recorded hash —

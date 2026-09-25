@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import type { SourceRef } from "../../shared/contracts/evidence";
 import type { Database } from "bun:sqlite";
 import type { Delivery, DeliveryPart } from "../../shared/contracts/conversation";
 export type OutboundTarget = {
@@ -7,6 +9,13 @@ export type OutboundTarget = {
   agentId: string;
   bindingId: string;
   bindingEpoch: number;
+  bindingRevision?: number;
+  authorityRevision?: number;
+  ownerIdentityRevision?: number | null;
+  schemeId?: string;
+  schemeRevision?: number;
+  agentConfigVersion?: number;
+  sources?: SourceRef[];
 };
 export type OutboundPartPayload = { text: string } | { stickerId: string };
 type IntentRow = {
@@ -212,9 +221,11 @@ export class OutboundIntentRepository {
         ? "failed"
         : parts.every((p) => p.status === "confirmed")
           ? "confirmed"
-          : parts.some((p) => p.status === "stale")
-            ? "stale"
-            : "delivering";
+          : parts.some((p) => p.status === "sending")
+            ? "delivering"
+            : parts.some((p) => p.status === "stale")
+              ? "stale"
+              : "delivering";
     this.db.query("UPDATE outbound_intents SET status=? WHERE id=?").run(status, id);
   }
   stale(id: string, at: string): boolean {
@@ -256,12 +267,63 @@ export class OutboundIntentRepository {
       return rows.length;
     })();
   }
-  purgeExpired(at = new Date().toISOString()): number {
-    return this.db
+  /** Actual confirmed words from partial deliveries, without changing legacy U13 counters. */
+  partialSpeechSince(
+    conversationId: string,
+    input: { sinceSeconds: number; limit: number; at: string },
+  ): Array<{ occurredAtSeconds: number; text: string; sources: SourceRef[] }> {
+    const rows = this.db
       .query(
-        "UPDATE outbound_parts SET payload=NULL WHERE payload IS NOT NULL AND intent_id IN(SELECT id FROM outbound_intents WHERE expires_at<=? AND status NOT IN('planned','delivering'))",
+        "SELECT id,expires_at FROM outbound_intents WHERE conversation_id=? AND status<>'confirmed' AND expires_at>? ORDER BY created_at DESC,output_ordinal DESC",
       )
-      .run(at).changes;
+      .all(conversationId, input.at) as { id: string; expires_at: string }[];
+    const speech = rows.flatMap((row) => {
+      const parts = this.parts(row.id).filter(
+        (p) => p.kind === "text" && p.status === "confirmed" && p.payload,
+      );
+      const text = parts.map((p) => (JSON.parse(p.payload!) as { text: string }).text).join("\n");
+      const seconds = Math.floor(Date.parse(parts[0]?.attempted_at ?? "") / 1000);
+      return text && seconds > input.sinceSeconds
+        ? [
+            {
+              occurredAtSeconds: seconds,
+              text,
+              sources: [
+                {
+                  kind: "outbound_intent",
+                  id: row.id,
+                  revision: createHash("sha256").update(text).digest("hex"),
+                  expiresAt: row.expires_at,
+                },
+              ],
+            },
+          ]
+        : [];
+    });
+    return speech.sort((a, b) => b.occurredAtSeconds - a.occurredAtSeconds).slice(0, input.limit);
+  }
+  /** Retention runs while transport is offline too; no pending payload can outlive its source. */
+  purgeExpired(at = new Date().toISOString()): number {
+    return this.db.transaction(() => {
+      const rows = this.db
+        .query(
+          "SELECT id FROM outbound_intents WHERE expires_at<=? AND status IN('planned','delivering')",
+        )
+        .all(at) as { id: string }[];
+      for (const row of rows) {
+        this.db
+          .query(
+            "UPDATE outbound_parts SET status='stale',finished_at=? WHERE intent_id=? AND status='planned'",
+          )
+          .run(at, row.id);
+        this.refreshStatus(row.id);
+      }
+      return this.db
+        .query(
+          "UPDATE outbound_parts SET payload=NULL WHERE payload IS NOT NULL AND intent_id IN(SELECT id FROM outbound_intents WHERE expires_at<=?)",
+        )
+        .run(at).changes;
+    })();
   }
   /** Caller records legacy receipt and sets this marker in the same SQLite transaction. */
   markLegacyProjection(id: string, sendId: string): void {
