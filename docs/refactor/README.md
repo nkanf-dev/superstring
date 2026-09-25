@@ -1,6 +1,6 @@
 # Superstring Agent 中心化重构总计划
 
-> 方案基线：`/Users/nkanf/clones/superstring` HEAD `d3167e4`，2026-09-25。本目录是**架构决策 + 逐文件施工与迁移验收**的完整文档集合；当前没有实施源码重构。现状事实见[业务 Wiki 首页](/Users/nkanf/docs/superstring/README.md)与[代码地图](/Users/nkanf/docs/superstring/06-代码地图与项目全貌.md)。
+> 方案基线：`/Users/nkanf/clones/superstring` HEAD `d3167e4`，2026-09-25。本目录是**架构决策 + 逐文件施工与迁移验收**的完整文档集合；实施进度见 [Implementation ledger](./IMPLEMENTATION.md)；PR1 已完成本地实现与自动化验证，PR2/3 正在推进。本文图示包含尚未完成的目标架构。现状事实见[业务 Wiki 首页](/Users/nkanf/docs/superstring/README.md)与[代码地图](/Users/nkanf/docs/superstring/06-代码地图与项目全貌.md)。
 
 ## 目标与边界
 

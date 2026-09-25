@@ -8,8 +8,8 @@ No existing feature may be simplified, downgraded, or omitted. Enhancements are 
 
 ## Work status
 
-- PR 1: in progress, parallel runtime core, leaf/module migration, frontend design and implementation.
-- PR 2: pending PR 1 contracts.
+- PR 1: implemented at ecb2bad; unified runtime, background task migration, lightweight modules, authorized source-bound context inspection and run UI. Original Web/QQ main loops remain until PR 2/3.
+- PR 2: in progress on codex/direct-conversations and three isolated implementation worktrees.
 - PR 3: pending direct host and delivery contracts.
 
 ## Validation
