@@ -49,6 +49,13 @@ export function createChatActions(set: StoreSet, get: StoreGet): Actions {
           }
         : {};
     });
+  let sessionListRevision = 0;
+  const syncSessions = async () => {
+    const revision = ++sessionListRevision;
+    const sessions = await get().apiClient.listSessions();
+    if (revision === sessionListRevision) set({ sessions });
+    return get().sessions;
+  };
   const ensureConversation = async (sessionId: string): Promise<string> => {
     const existing = get().sessionConversationIds[sessionId];
     if (existing) return existing;
@@ -334,8 +341,7 @@ export function createChatActions(set: StoreSet, get: StoreGet): Actions {
         return;
       }
       await settleMessages(id);
-      const sessions = await get().apiClient.listSessions();
-      set({ sessions });
+      await syncSessions();
     } catch (reason) {
       // An eager HTTP rejection is an explicit verdict. Transport/EOF failures require read-only reconciliation.
       if (!started && reason instanceof ApiError && reason.status >= 400 && reason.status < 500) {
@@ -396,6 +402,7 @@ export function createChatActions(set: StoreSet, get: StoreGet): Actions {
           mode: "chat",
           client_request_id: get().effects.requestId(),
         });
+        sessionListRevision++;
         set((state) => ({
           sessions: [created, ...state.sessions.filter((item) => item.id !== created.id)],
           error: null,
@@ -417,6 +424,7 @@ export function createChatActions(set: StoreSet, get: StoreGet): Actions {
       if (get().sessions.find((item) => item.id === id)?.title === parsed.data.title) return true;
       try {
         const updated = await get().apiClient.renameSession(id, parsed.data.title);
+        sessionListRevision++;
         set((state) => ({
           sessions: state.sessions.map((item) => (item.id === id ? updated : item)),
           memorySessions: state.memorySessions.map((item) =>
@@ -438,6 +446,7 @@ export function createChatActions(set: StoreSet, get: StoreGet): Actions {
       }
       try {
         await get().apiClient.deleteSession(sessionId);
+        sessionListRevision++;
         const sessions = get().sessions.filter((item) => item.id !== sessionId);
         const id = get().sessionConversationIds[sessionId];
         const wasCurrent = get().currentSessionId === sessionId;
@@ -489,11 +498,8 @@ export function createChatActions(set: StoreSet, get: StoreGet): Actions {
           set({ error });
           return false;
         }
-        set({
-          sessions: await get().apiClient.listSessions(),
-          feedback: msg("会话已刷新"),
-          error: null,
-        });
+        await syncSessions();
+        set({ feedback: msg("会话已刷新"), error: null });
         return true;
       } catch (reason) {
         set({ error: errorText(reason) });
@@ -502,8 +508,7 @@ export function createChatActions(set: StoreSet, get: StoreGet): Actions {
     },
     refreshSession: async () => {
       try {
-        const sessions = await get().apiClient.listSessions();
-        set({ sessions });
+        const sessions = await syncSessions();
         const current = get().currentSessionId;
         const next = sessions.find((item) => item.id === current) ?? sessions[0];
         if (next) await get().selectSession(next.id);

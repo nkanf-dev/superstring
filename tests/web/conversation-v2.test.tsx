@@ -370,3 +370,43 @@ it("failed pending-run lookup stays unresolved and the check action retries only
   expect(currentChat(store.getState()).phase).toBe("idle");
   expect(listRuns).toHaveBeenCalledTimes(2);
 });
+it("a late sidebar refresh cannot recreate a session deleted while another chat completes", async () => {
+  let finishList!: (items: Awaited<ReturnType<SuperstringApi["listSessions"]>>) => void;
+  const sessions = ["a", "b"].map((id) => ({
+    id,
+    title: id,
+    agent_id: "agent",
+    mode: "chat" as const,
+    config_version: 1,
+    created_at: now,
+    updated_at: now,
+  }));
+  const listSessions = vi.fn(
+    () =>
+      new Promise<Awaited<ReturnType<SuperstringApi["listSessions"]>>>((resolve) => {
+        finishList = resolve;
+      }),
+  );
+  setup(
+    { listSessions, deleteSession: async () => {} },
+    {
+      streamChatV2: async (body, emit) => {
+        emit({
+          type: "replay",
+          conversationId: "conversation:a",
+          sessionId: "a",
+          requestId: body.client_request_id,
+          message: { id: "reply", text: "reply", createdAt: now, completedAt: now },
+        });
+      },
+    },
+  );
+  store.setState({ sessions });
+  await compose();
+  const send = store.getState().send();
+  await waitFor(() => expect(finishList).toBeTypeOf("function"));
+  await store.getState().deleteSessionById("b");
+  finishList(sessions);
+  await send;
+  expect(store.getState().sessions.map((item) => item.id)).toEqual(["a"]);
+});
