@@ -37,7 +37,7 @@ import {
 import { ownSpeechSince } from "../../db/qq-speech-repository";
 import { DEFAULT_USER_ID, type Orm } from "../../db/repositories";
 import { AppError, fail } from "../../errors";
-import type { ModelGateway } from "../../llm/model-gateway";
+import type { ChatMessage, ModelGateway } from "../../llm/model-gateway";
 import { SqliteKnowledgeModule } from "../../modules/knowledge-module";
 import { SqliteMemoryModule } from "../../modules/memory-module";
 import { contextDumps, estimateMessages } from "../../modules/memory-query";
@@ -55,6 +55,7 @@ import {
 import { qqJudgementQuestion } from "../../services/qq-judgement-material";
 import {
   buildQqPrompt,
+  QQ_JUDGEMENT_RESPONSE_SCHEMA,
   type QqPromptInput,
   type QqPromptMaterial,
   qqPromptMessages,
@@ -62,6 +63,7 @@ import {
 } from "../../services/qq-prompt-contract";
 import type { QqSpeechKind } from "../../services/qq-speaking-contract";
 import { compileSystemPrompt } from "../../services/runtime-config";
+import { estimateTokens } from "../../services/token-estimate";
 
 export interface BotContextTarget {
   id: string;
@@ -224,6 +226,84 @@ export class BotContextSource {
       context,
     };
   }
+  /** A score leaf uses the same phase material/observations; only its trusted output protocol differs. */
+  async prepareEvaluation(input: {
+    signal: AbortSignal;
+    target: BotContextTarget | null;
+  }): Promise<{
+    model: string;
+    messages: ChatMessage[];
+    sources: SourceRef[];
+    inputUnits: number;
+  }> {
+    input.signal.throwIfAborted();
+    this.assertCurrent();
+    if (
+      input.target &&
+      !this.options
+        .targets()
+        .some(
+          (target) => target.id === input.target?.id && target.speakerId === input.target.speakerId,
+        )
+    )
+      fail("CONTEXT_SOURCE_INVALID", "评分目标不再受权");
+    const view = await this.view("judgement", input.signal);
+    const rendered = this.engine.render(
+      this.options.spec,
+      view.material,
+      this.observations,
+      this.targetIds(),
+    );
+    const messages = this.evaluationMessages(
+      view.material,
+      this.observations,
+      input.target ?? undefined,
+      view.selection.messages,
+    );
+    const units =
+      estimateMessages(messages as Parameters<typeof estimateMessages>[0]) +
+      estimateTokens(contextDumps(QQ_JUDGEMENT_RESPONSE_SCHEMA));
+    if (units > view.limit)
+      fail("CONTEXT_BUDGET_EXCEEDED", "评分上下文及结构化输出协议超过模型容量");
+    this.assertSources(rendered.sources);
+    input.signal.throwIfAborted();
+    return {
+      model: this.options.spec.model ?? this.options.runtime.model_name,
+      messages,
+      sources: rendered.sources,
+      inputUnits: view.limit,
+    };
+  }
+  private evaluationMessages(
+    material: ContextMaterial,
+    observations: readonly ActionObservation[],
+    target?: BotContextTarget,
+    timeline: readonly QqContextMessage[] = [],
+  ): ChatMessage[] {
+    const prompt = this.prompt(timeline, target);
+    const systems = qqPromptMessages(
+      buildQqPrompt({ ...prompt, tier: "judgement", prompts: schemePrompts(this.options.scheme) }),
+    ).filter((message) => message.role === "system");
+    const rendered = this.engine.render(
+      this.options.spec,
+      material,
+      observations,
+      this.targetIds(),
+    );
+    return [
+      ...systems,
+      ...rendered.messages.slice(1).map((message) => ({
+        role: message.role,
+        content: message.content
+          .map((part) => {
+            if (part.kind !== "text")
+              throw new Error("Bot scoring expects source descriptions, not image bytes");
+            return part.text;
+          })
+          .join(""),
+      })),
+    ];
+  }
   assertCurrent(): void {
     const o = this.options;
     o.assertCurrent();
@@ -312,7 +392,7 @@ export class BotContextSource {
       nowSeconds: Math.floor(Date.parse(this.now()) / 1000),
       labels,
       attentionMembers: o.binding.attention.members,
-      ...(target?.speakerId
+      ...(target !== undefined
         ? {
             replyingTo: {
               speakerId: target.speakerId,
@@ -336,20 +416,32 @@ export class BotContextSource {
     tier: QqContextTier,
     material: ContextMaterial,
     observations = this.observations,
+    timeline = this.views.get(tier)?.selection.messages ?? [],
   ): number {
     const o = this.options;
     const rendered = this.engine.render(o.spec, material, observations, this.targetIds());
-    if (tier === o.decisionTier) {
-      // Same reply window for private next and generation must fit both rendered protocols.
-      if (tier !== "reply") return rendered.units;
-    }
     const targets = o.targets();
+    if (tier === "judgement") {
+      const schemaUnits = estimateTokens(contextDumps(QQ_JUDGEMENT_RESPONSE_SCHEMA));
+      const evaluations = [undefined, ...targets].map(
+        (target) =>
+          estimateMessages(
+            this.evaluationMessages(material, observations, target, timeline) as Parameters<
+              typeof estimateMessages
+            >[0],
+          ) + schemaUnits,
+      );
+      return Math.max(tier === o.decisionTier ? rendered.units : 0, ...evaluations);
+    }
     const generation = targets.map((target) =>
       inputUnits(
         this.engine.renderOutput(
           {
             ...o.spec,
-            generation: { ...o.spec.generation, instructions: this.replyInstructions([], target) },
+            generation: {
+              ...o.spec.generation,
+              instructions: this.replyInstructions(timeline, target),
+            },
           },
           rendered,
           { kind: "generate", targetId: target.id, instructions: "" },
@@ -396,6 +488,8 @@ export class BotContextSource {
       ],
     });
     const selection = qqSelectContext({ timeline, limits, nowSeconds });
+    const cost = (material: ContextMaterial) =>
+      this.cost(tier, material, this.observations, selection.messages);
     const raw = (materials: QqPromptMaterial[] = []) =>
       qqPromptMessages(buildQqPrompt(this.prompt(selection.messages, undefined, materials)))
         .filter((message) => message.role === "user")
@@ -405,7 +499,7 @@ export class BotContextSource {
       sources: selection.messages.flatMap((message) => message.sources ?? []),
     };
     const limit = await this.available(tier, signal);
-    const fixed = this.cost(tier, material);
+    const fixed = cost(material);
     if (fixed > limit) fail("CONTEXT_BUDGET_EXCEEDED", "配置窗口的原文与完整协议超过模型容量");
     const keys = qqMemoryScopeKeyset(o.snapshot.access).read;
     const fingerprint = memoryFingerprintByScopeKeys(o.orm, o.binding.agentId, keys);
@@ -454,7 +548,7 @@ export class BotContextSource {
         ...memories.map((item) => ({ kind: "memory", id: item.id, revision: item.revision })),
       ]),
     };
-    const knowledgeRoom = limit - this.cost(tier, material);
+    const knowledgeRoom = limit - cost(material);
     if (knowledgeRoom > 0 && o.runtime.knowledge_read?.config.enabled !== false) {
       const found = await this.knowledge.query({
         agentId: o.binding.agentId,
@@ -466,7 +560,7 @@ export class BotContextSource {
       });
       const knowledge = this.fitGroups(
         found,
-        (candidate) => this.cost(tier, { ...material, evidence: candidate }) <= limit,
+        (candidate) => cost({ ...material, evidence: candidate }) <= limit,
       );
       material = {
         ...material,
@@ -490,9 +584,9 @@ export class BotContextSource {
         ...(material.sources ?? []),
         ...records.flatMap((record) => record.sources),
       ]);
-      const baseline = this.cost(tier, material);
+      const baseline = cost(material);
       const summaryCost = (summary: Evidence) =>
-        this.cost(tier, { ...material, summaries: [summary] }) - baseline;
+        cost({ ...material, summaries: [summary] }) - baseline;
       const overhead = summaryCost(
         conversationSummaryEvidence({
           id: `summary:${"0".repeat(64)}`,
@@ -519,7 +613,7 @@ export class BotContextSource {
             signal,
             fits: (summary) => summaryCost(summary) <= Math.min(room, readBudget),
           });
-          if (summary && this.cost(tier, { ...material, summaries: [summary] }) <= limit)
+          if (summary && cost({ ...material, summaries: [summary] }) <= limit)
             material = {
               ...material,
               summaries: [summary],
@@ -554,8 +648,7 @@ export class BotContextSource {
         }
       }
     }
-    if (this.cost(tier, material) > limit)
-      fail("CONTEXT_BUDGET_EXCEEDED", "初始资料及协议超过可用容量");
+    if (cost(material) > limit) fail("CONTEXT_BUDGET_EXCEEDED", "初始资料及协议超过可用容量");
     this.assertSources(material.sources ?? []);
     const view: View = { material, selection, limit, ...(memories.length ? { fingerprint } : {}) };
     this.views.set(tier, view);

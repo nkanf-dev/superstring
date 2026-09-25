@@ -239,7 +239,13 @@ describe("shared Bot context source", () => {
         material.sources?.some((source) => source.kind === "memory" && source.id === own),
       ).toBe(mode !== "off");
       expect(h.calls.length > 0).toBe(mode !== "off" && mode !== "full_body");
+      const evaluation = await h.source.prepareEvaluation({ ...readInput(), target: null });
+      expect(
+        evaluation.sources.some((source) => source.kind === "memory" && source.id === own),
+      ).toBe(mode !== "off");
+      expect(JSON.stringify(evaluation.messages)).not.toContain("foreign pears");
       const count = h.calls.length;
+      await h.source.prepareEvaluation({ ...readInput(), target: null });
       expect(await h.source.read(readInput())).toBe(material);
       expect(h.calls).toHaveLength(count);
       if (mode !== "off") {
@@ -287,6 +293,41 @@ describe("shared Bot context source", () => {
     await h.source.read(readInput());
     expect(h.calls).toHaveLength(count);
   });
+  it("projects scoring from the same judgement material, including observations and exact configured score instructions", async () => {
+    const h = setup({ decisionTier: "judgement", mode: "full_body" });
+    const own = h.memory("own factual memory");
+    const observed = h.seed("evidence delivered by an action");
+    const initial = await h.source.read(readInput());
+    const ref = initial.sources?.find((source) => source.id === observed);
+    if (!ref) throw new Error("Missing observed source");
+    await h.source.read({
+      ...readInput(),
+      observations: [
+        { id: "observation", name: "memory.query", value: "supplemental result", sources: [ref] },
+      ],
+    });
+    const prepared = await h.source.prepareEvaluation({
+      ...readInput(),
+      target: { id: "bob", speakerId: "20003" },
+    });
+    expect(prepared.model).toBe("judge-model");
+    expect(prepared.messages[0].content).toContain("20003");
+    expect(prepared.messages[0].content).toContain("score");
+    expect(prepared.messages[0].content).not.toContain("Return exactly one JSON decision");
+    expect(prepared.messages[0].content).not.toContain("Write only the response body");
+    expect(prepared.messages.slice(1).every((message) => message.role !== "system")).toBe(true);
+    expect(JSON.stringify(prepared.messages)).toContain("supplemental result");
+    expect(prepared.sources.some((source) => source.id === own)).toBe(true);
+    const calls = h.calls.length;
+    await h.source.prepareEvaluation({ ...readInput(), target: null });
+    expect(h.calls).toHaveLength(calls);
+    h.db.query("DELETE FROM qq_observation_text WHERE event_key=?").run(observed);
+    await expect(
+      h.source.prepareEvaluation({ ...readInput(), target: null }),
+    ).rejects.toMatchObject({ code: "CONTEXT_SOURCE_INVALID" });
+    expect(h.calls).toHaveLength(calls);
+  });
+
   it("re-observes newer events explicitly while rejecting deleted prior sources", async () => {
     const h = setup();
     const first = h.seed("first");
