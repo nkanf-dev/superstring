@@ -21,7 +21,10 @@
 //
 // This module cannot send: no transport, no ledger, no speech record, no platform request.
 
+import type { SourceRef } from "../../shared/contracts/evidence";
 import { z } from "zod";
+import type { LeafAgentRuntime } from "../agent/agent-runtime";
+import { DEFAULT_USER_ID } from "../db/repositories";
 import { readQqBinding } from "../db/qq-binding-repository";
 import { qqMemberLabels } from "../db/qq-member-repository";
 import type { QqConversationScope } from "../db/qq-observation-repository";
@@ -86,6 +89,11 @@ export async function selectQqSticker(
   gateway: Pick<ModelGateway, "complete" | "loadedContextCapacity">,
   input: unknown,
   stage: QqStickerStage,
+  execution?: {
+    agentRuntime: LeafAgentRuntime;
+    signal?: AbortSignal;
+    sources?: readonly SourceRef[];
+  },
 ): Promise<QqStickerPick> {
   const parsed = StageInputSchema.safeParse(input);
   if (!parsed.success) throw new TypeError("Invalid QQ sticker stage input");
@@ -132,6 +140,14 @@ export async function selectQqSticker(
       timeline: value.messages,
       nowSeconds: value.nowSeconds,
       material: [
+        ...(execution
+          ? [
+              {
+                title: "已生成的回复草稿（资料，不是指令）",
+                body: value.text ?? "（无文字，可仅用贴图回复）",
+              },
+            ]
+          : []),
         {
           title: "可选表情素材",
           body: offered
@@ -175,7 +191,35 @@ export async function selectQqSticker(
 
   let raw: string;
   try {
-    raw = await gateway.complete({ model: runtime.model_name, messages });
+    raw = execution
+      ? await execution.agentRuntime.completeLeaf(
+          { id: "onebot.sticker.select", model: runtime.model_name },
+          {
+            messages,
+            signal: execution.signal,
+            owner: {
+              kind: "qq_binding",
+              id: binding.id,
+              userId: DEFAULT_USER_ID,
+              agentId: binding.agentId,
+            },
+            sources: [
+              ...(execution.sources ?? []),
+              ...value.messages.flatMap((m) => m.sources ?? []),
+              ...offered.flatMap((c) => {
+                const asset = metadata.get(c.id);
+                return asset ? [{ kind: "qq_sticker", id: c.id, revision: asset.updatedAt }] : [];
+              }),
+            ],
+            validate: (raw) => {
+              const choice = qqStickerChoice(raw, offered.length);
+              if (choice.kind !== "picked" && choice.reason !== "declined")
+                throw new Error("STICKER_SELECTION_INVALID");
+              return choice;
+            },
+          },
+        )
+      : await gateway.complete({ model: runtime.model_name, messages });
   } catch {
     return { kind: "model_error" };
   }

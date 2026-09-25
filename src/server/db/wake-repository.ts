@@ -44,12 +44,13 @@ export class WakeRepository {
     readyAt: string;
     priority: number;
     at?: string;
+    mergeReadyAt?: "earliest" | "latest";
   }): WakeSignal {
     const at = input.at ?? new Date().toISOString();
     const id = crypto.randomUUID();
     this.db
       .query(
-        `INSERT INTO wake_signals(id,conversation_id,cause,through_seq,dedupe_key,ready_at,priority,status,created_at) VALUES(?,?,?,?,?,?,?,'pending',?) ON CONFLICT(dedupe_key) DO UPDATE SET through_seq=MAX(through_seq,excluded.through_seq),ready_at=MIN(ready_at,excluded.ready_at),priority=MAX(priority,excluded.priority) WHERE status='pending'`,
+        `INSERT INTO wake_signals(id,conversation_id,cause,through_seq,dedupe_key,ready_at,priority,status,created_at) VALUES(?,?,?,?,?,?,?,'pending',?) ON CONFLICT(dedupe_key) DO UPDATE SET through_seq=MAX(through_seq,excluded.through_seq),ready_at=${input.mergeReadyAt === "latest" ? "MAX" : "MIN"}(ready_at,excluded.ready_at),created_at=MAX(created_at,excluded.created_at),priority=MAX(priority,excluded.priority) WHERE status='pending'`,
       )
       .run(
         id,
@@ -65,14 +66,42 @@ export class WakeRepository {
       this.db.query("SELECT * FROM wake_signals WHERE dedupe_key=?").get(input.dedupeKey) as Row,
     );
   }
-  claim(input: { at: string; leaseMs: number; topology?: "direct" | "shared" }): WakeSignal | null {
+  peek(input: { at: string; topology?: "direct" | "shared"; cause?: string }): WakeSignal | null {
+    const row = this.db
+      .query(
+        `SELECT w.* FROM wake_signals w JOIN conversations c ON c.id=w.conversation_id WHERE w.status='pending' AND w.ready_at<=? AND c.closed_at IS NULL AND c.channel='onebot11' AND (? IS NULL OR c.topology=?) AND (? IS NULL OR w.cause=?) AND NOT EXISTS(SELECT 1 FROM wake_signals held WHERE held.conversation_id=w.conversation_id AND held.status='leased') ORDER BY w.priority DESC,w.created_at DESC,w.conversation_id,w.through_seq DESC,w.id DESC LIMIT 1`,
+      )
+      .get(
+        input.at,
+        input.topology ?? null,
+        input.topology ?? null,
+        input.cause ?? null,
+        input.cause ?? null,
+      ) as Row | null;
+    return row ? map(row) : null;
+  }
+  claim(input: {
+    at: string;
+    leaseMs: number;
+    topology?: "direct" | "shared";
+    cause?: string;
+    wakeId?: string;
+  }): WakeSignal | null {
     return this.db
       .transaction(() => {
         const r = this.db
           .query(
-            `SELECT w.* FROM wake_signals w JOIN conversations c ON c.id=w.conversation_id WHERE w.status='pending' AND w.ready_at<=? AND c.closed_at IS NULL AND c.channel='onebot11' AND (? IS NULL OR c.topology=?) AND NOT EXISTS(SELECT 1 FROM wake_signals held WHERE held.conversation_id=w.conversation_id AND held.status='leased') ORDER BY w.priority DESC,w.through_seq DESC,w.created_at DESC,w.id DESC LIMIT 1`,
+            `SELECT w.* FROM wake_signals w JOIN conversations c ON c.id=w.conversation_id WHERE w.status='pending' AND w.ready_at<=? AND c.closed_at IS NULL AND c.channel='onebot11' AND (? IS NULL OR c.topology=?) AND (? IS NULL OR w.cause=?) AND (? IS NULL OR w.id=?) AND NOT EXISTS(SELECT 1 FROM wake_signals held WHERE held.conversation_id=w.conversation_id AND held.status='leased') ORDER BY w.priority DESC,w.created_at DESC,w.conversation_id,w.through_seq DESC,w.id DESC LIMIT 1`,
           )
-          .get(input.at, input.topology ?? null, input.topology ?? null) as Row | null;
+          .get(
+            input.at,
+            input.topology ?? null,
+            input.topology ?? null,
+            input.cause ?? null,
+            input.cause ?? null,
+            input.wakeId ?? null,
+            input.wakeId ?? null,
+          ) as Row | null;
         if (!r) return null;
         const token = crypto.randomUUID();
         this.db
@@ -117,9 +146,9 @@ export class WakeRepository {
     // Opportunities covered by this successful observation are consumed, not their source messages.
     this.db
       .query(
-        "UPDATE wake_signals SET status=?,completed_at=? WHERE conversation_id=? AND status='pending' AND through_seq<=?",
+        "UPDATE wake_signals SET status=?,completed_at=? WHERE conversation_id=? AND cause=? AND status='pending' AND through_seq<=?",
       )
-      .run(status, at, r.conversationId, throughSeq);
+      .run(status, at, r.conversationId, r.cause, throughSeq);
   }
   fail(
     id: string,

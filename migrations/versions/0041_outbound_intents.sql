@@ -28,3 +28,24 @@ CREATE TABLE outbound_parts (
   UNIQUE(intent_id,ordinal)
 );
 CREATE INDEX ix_outbound_parts_status ON outbound_parts(status,intent_id,ordinal);
+
+CREATE TRIGGER redact_agent_context_outbound_delete AFTER DELETE ON outbound_intents
+
+BEGIN
+  UPDATE context_snapshots SET protected_messages=NULL,status='expired'
+  WHERE status='exact' AND EXISTS (SELECT 1 FROM json_each(source_refs) r WHERE json_extract(r.value,'$.kind')='outbound_intent' AND json_extract(r.value,'$.id')=OLD.id);
+END;
+
+CREATE TRIGGER redact_agent_context_outbound_part_delete AFTER DELETE ON outbound_parts
+
+BEGIN
+  UPDATE context_snapshots SET protected_messages=NULL,status='expired'
+  WHERE status='exact' AND EXISTS (SELECT 1 FROM json_each(source_refs) r WHERE json_extract(r.value,'$.kind')='outbound_intent' AND json_extract(r.value,'$.id')=OLD.intent_id);
+END;
+
+CREATE TRIGGER redact_agent_context_outbound_part_change AFTER UPDATE OF payload,status ON outbound_parts
+WHEN NEW.payload IS NOT OLD.payload OR NEW.status IS NOT OLD.status
+BEGIN
+  UPDATE context_snapshots SET protected_messages=NULL,status='expired'
+  WHERE status='exact' AND EXISTS (SELECT 1 FROM json_each(source_refs) r WHERE json_extract(r.value,'$.kind')='outbound_intent' AND json_extract(r.value,'$.id')=OLD.intent_id);
+END;
