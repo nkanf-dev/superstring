@@ -457,6 +457,79 @@ describe("unified AgentRuntime", () => {
     );
   });
 
+  it("retires interrupted persisted runs once without re-executing their owner jobs", async () => {
+    const { runtime, repository } = setup({
+      async complete() {
+        return "done";
+      },
+    });
+    await runtime.completeLeaf({ id: "finished" }, { owner, messages: [] });
+    repository.createRun({
+      runId: "interrupted",
+      specId: "leaf",
+      specVersion: "1",
+      owner,
+      at: "2026-01-01T00:00:00.000Z",
+    });
+    repository.setStatus("interrupted", "generating", "2026-01-01T00:00:00.000Z");
+    repository.startStep({
+      runId: "interrupted",
+      stepId: "step",
+      stepNo: 1,
+      model: "model",
+      phase: "leaf",
+      at: "2026-01-01T00:00:00.000Z",
+      messages: [textMessage("user", "input")],
+      sources: [],
+    });
+    expect(repository.recoverInterrupted("2026-01-02T00:00:00.000Z")).toBe(1);
+    expect(repository.getRun("interrupted")).toMatchObject({
+      status: "failed",
+      errorCode: "AGENT_INTERRUPTED",
+      steps: [{ status: "failed", errorCode: "AGENT_INTERRUPTED" }],
+    });
+    expect(repository.listEvents("interrupted")).toHaveLength(1);
+    expect(repository.recoverInterrupted("2026-01-03T00:00:00.000Z")).toBe(0);
+    expect(repository.listEvents("interrupted")).toHaveLength(1);
+    expect(
+      repository
+        .listRuns({ ownerKind: owner.kind, ownerId: owner.id })
+        .filter((run) => run.status === "completed"),
+    ).toHaveLength(1);
+  });
+
+  it("preserves separate decision/generation routes, parameters and generation capacity", async () => {
+    const { runtime, repository } = setup({
+      async complete(request) {
+        expect(request.model).toBe("judgement");
+        return '{"kind":"final","outputs":[{"kind":"generate","targetId":"web","instructions":"reply"}]}';
+      },
+      async *streamText(request) {
+        expect(request).toMatchObject({ model: "reply", temperature: 0.8, maxTokens: 256 });
+        yield "reply";
+      },
+    });
+    const configured = {
+      ...spec,
+      model: "judgement",
+      generation: { model: "reply", temperature: 0.8, maxTokens: 256 },
+    };
+    const result = await runtime.run(configured, direct);
+    expect(repository.getRun(result.runId)?.steps.map((step) => step.model)).toEqual([
+      "judgement",
+      "reply",
+    ]);
+    await expect(
+      runtime.run(
+        { ...configured, generation: { ...configured.generation, inputUnits: 1 } },
+        direct,
+      ),
+    ).rejects.toMatchObject({ code: "AGENT_CONTEXT_LIMIT" });
+    await expect(
+      runtime.run({ ...configured, limits: { steps: 1 } }, { ...direct, outputMode: "buffered" }),
+    ).rejects.toMatchObject({ code: "AGENT_STEP_LIMIT" });
+  });
+
   it("ModelPort preserves the gateway structured-output contract and default model", async () => {
     const { repository } = setup();
     let received: unknown;

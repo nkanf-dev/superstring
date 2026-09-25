@@ -51,6 +51,25 @@ type ContextRow = {
 export class AgentRunRepository {
   constructor(private readonly db: Database) {}
 
+  /** Restart retires inference attempts; owning job/session workers decide whether to retry. */
+  recoverInterrupted(at = new Date().toISOString()): number {
+    return this.db.transaction(() => {
+      const interrupted = this.db
+        .query("SELECT run_id FROM agent_runs WHERE ended_at IS NULL")
+        .all() as { run_id: string }[];
+      for (const { run_id: runId } of interrupted) {
+        this.db
+          .query(`UPDATE agent_steps SET status='failed',ended_at=?,error_code='AGENT_INTERRUPTED'
+          WHERE run_id=? AND status='running'`)
+          .run(at, runId);
+        this.finishRun(runId, "failed", { type: "failed", code: "AGENT_INTERRUPTED" }, at, {
+          errorCode: "AGENT_INTERRUPTED",
+        });
+      }
+      return interrupted.length;
+    })();
+  }
+
   createRun(input: {
     runId: string;
     specId: string;

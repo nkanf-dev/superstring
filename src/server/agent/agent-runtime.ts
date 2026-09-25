@@ -330,26 +330,40 @@ export class AgentRuntime {
             }
             this.checkStepBudget(active, spec);
             const messages = this.contextEngine.renderOutput(spec, context, draft);
+            const generationSpec: LeafAgentSpec = {
+              ...spec,
+              model: spec.generation?.model ?? spec.model,
+              temperature: spec.generation?.temperature ?? spec.temperature,
+              maxTokens: spec.generation?.maxTokens ?? spec.maxTokens ?? spec.limits.outputTokens,
+              limits: { inputUnits: spec.generation?.inputUnits ?? spec.limits.inputUnits },
+            };
             let text = "";
-            await this.step(active, "generate", messages, context.sources, async () => {
-              for await (const delta of this.options.model.streamText({
-                messages,
-                model: spec.model,
-                temperature: spec.temperature,
-                maxTokens: spec.maxTokens ?? spec.limits.outputTokens,
-                signal: active.signal,
-              })) {
-                active.signal.throwIfAborted();
-                text += delta;
-                if (input.outputMode === "stream")
-                  await this.emit(active, { type: "output_delta", outputId, text: delta });
-              }
-              if (!text.trim())
-                throw new AgentRuntimeError(
-                  "MODEL_EMPTY_RESPONSE",
-                  "Model returned an empty response",
-                );
-            });
+            await this.step(
+              active,
+              "generate",
+              messages,
+              context.sources,
+              async () => {
+                for await (const delta of this.options.model.streamText({
+                  messages,
+                  model: generationSpec.model,
+                  temperature: generationSpec.temperature,
+                  maxTokens: generationSpec.maxTokens,
+                  signal: active.signal,
+                })) {
+                  active.signal.throwIfAborted();
+                  text += delta;
+                  if (input.outputMode === "stream")
+                    await this.emit(active, { type: "output_delta", outputId, text: delta });
+                }
+                if (!text.trim())
+                  throw new AgentRuntimeError(
+                    "MODEL_EMPTY_RESPONSE",
+                    "Model returned an empty response",
+                  );
+              },
+              generationSpec,
+            );
             outputs.push({ outputId, targetId: draft.targetId, status: "prepared", text });
           } catch (error) {
             if (
@@ -447,9 +461,10 @@ export class AgentRuntime {
     messages: ModelMessage[],
     sources: readonly SourceRef[],
     execute: () => Promise<T>,
+    stepSpec: LeafAgentSpec = active.spec,
   ): Promise<T> {
     active.signal.throwIfAborted();
-    const limit = active.spec.limits?.inputUnits;
+    const limit = stepSpec.limits?.inputUnits;
     if (limit !== undefined && inputUnits(messages) > limit)
       throw new AgentRuntimeError(
         "AGENT_CONTEXT_LIMIT",
@@ -461,7 +476,7 @@ export class AgentRuntime {
       runId: active.runId,
       stepId,
       stepNo: ++active.stepNo,
-      model: active.spec.model ?? this.options.model.defaultModel ?? "",
+      model: stepSpec.model ?? this.options.model.defaultModel ?? "",
       phase,
       at: now,
       messages,

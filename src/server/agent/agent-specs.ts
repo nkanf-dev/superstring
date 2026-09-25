@@ -20,6 +20,13 @@ export interface LeafAgentSpec {
 export interface AgentSpec extends LeafAgentSpec {
   context: "conversation";
   availableActions: readonly ActionDescription[];
+  /** Different routes may decide and write; e.g. shared Bot judgement vs Agent reply model. */
+  generation?: {
+    model?: string;
+    temperature?: number;
+    maxTokens?: number;
+    inputUnits?: number;
+  };
   limits: { inputUnits?: number; outputTokens?: number; steps: number; deadlineMs?: number };
 }
 
