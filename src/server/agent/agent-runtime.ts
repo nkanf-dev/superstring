@@ -26,6 +26,7 @@ import {
   ContextEngine,
   type ConversationContextSource,
   inputUnits,
+  type RenderedContext,
   textMessage,
 } from "./context-engine";
 import { createModelPort, type ModelPort, type TextModelGateway, textMessages } from "./model-port";
@@ -59,6 +60,10 @@ export interface ConversationInput {
   onEvent?: (event: RunEvent) => void | Promise<void>;
   /** Host-bound scope/budget handlers, never derived from model arguments. */
   actions?: readonly BuiltInAction[];
+  onContext?: (
+    context: RenderedContext,
+    input: { runId: string; phase: "next" | "generate" },
+  ) => void | Promise<void>;
   /** Called before the first output delta, e.g. reserve the Web assistant message ID. */
   prepareOutput?: (
     draft: OutputDraft,
@@ -229,7 +234,9 @@ export class AgentRuntime {
           material,
           observations,
           input.authorizedTargets,
+          input.outputMode,
         );
+        await input.onContext?.(context, { runId: active.runId, phase: "next" });
         const decision = await this.step(
           active,
           "next",
@@ -338,6 +345,10 @@ export class AgentRuntime {
             }
             this.checkStepBudget(active, spec);
             const messages = this.contextEngine.renderOutput(spec, context, draft);
+            await input.onContext?.(
+              { ...context, messages, units: inputUnits(messages) },
+              { runId: active.runId, phase: "generate" },
+            );
             const generationSpec: LeafAgentSpec = {
               ...spec,
               model: spec.generation?.model ?? spec.model,
@@ -360,6 +371,7 @@ export class AgentRuntime {
                   signal: active.signal,
                 })) {
                   active.signal.throwIfAborted();
+                  if (!delta) continue;
                   text += delta;
                   if (input.outputMode === "stream")
                     await this.emit(active, { type: "output_delta", outputId, text: delta });

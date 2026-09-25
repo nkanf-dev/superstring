@@ -74,6 +74,11 @@ class ContextGateway implements ModelGateway {
 
   async complete(call: CompleteCall): Promise<string> {
     this.completeCalls.push(call);
+    if (call.messages[0]?.content.includes("Return exactly one JSON decision"))
+      return JSON.stringify({
+        kind: "final",
+        outputs: [{ kind: "generate", targetId: "reply", instructions: "" }],
+      });
     if (this.completeReply) return this.completeReply(call);
     const title = String(call.responseSchema?.title ?? "");
     if (title === "Selection") {
