@@ -1,3 +1,4 @@
+import { observationRelevant } from "./observation-relevance";
 import type { Delivery } from "../../shared/contracts/conversation";
 import type { ConversationEventRepository } from "../db/conversation-event-repository";
 import type { OutboundIntentRepository, OutboundTarget } from "../db/outbound-intent-repository";
@@ -112,7 +113,13 @@ export class OutboundDelivery {
       const target = JSON.parse(row.target) as OutboundTarget;
       const changed = journal
         .eventsAfter(row.conversation_id, row.source_through_seq, Number.MAX_SAFE_INTEGER)
-        .items.some((e) => e.kind === "inbound" || e.kind === "media_revision");
+        .items.some((event) =>
+          observationRelevant(event, {
+            topology: target.conversationKind === "private" ? "direct" : "shared",
+            participantIds: [target.participantId ?? null],
+            attentionMembers: target.attentionMembers,
+          }),
+        );
       if (this.now() >= row.deliver_by || changed || !this.options.authorize(target, delivery)) {
         const stale = repository.db.transaction(() => {
           const result = repository.stale(id, this.now());
@@ -137,7 +144,10 @@ export class OutboundDelivery {
           result = await this.options.port.send({
             kind: target.conversationKind,
             peerId: target.peerId,
-            message: qqTextSegments(claim.payload.text),
+            message: qqTextSegments(
+              claim.payload.text,
+              claim.part.ordinal === 0 ? (target.participantId ?? null) : null,
+            ),
           });
         } else {
           const file =

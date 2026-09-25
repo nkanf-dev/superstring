@@ -150,7 +150,9 @@ describe("OneBot private common host", () => {
     expect(h.receive("1")).toMatchObject({ kind: "recorded", recorded: true });
     h.receive("1");
     const conversation = h.journal.ensureOneBot(bindingId)!;
-    expect(h.journal.eventsAfter(conversation.id).items).toHaveLength(1);
+    expect(
+      h.journal.eventsAfter(conversation.id).items.filter((e) => e.kind === "inbound"),
+    ).toHaveLength(1);
     const scheduler = new WakeScheduler({
       repository: h.wakes,
       policy: () => ({ leaseMs: 120000, renewMs: 30000, maxAttempts: 3, retryDelayMs: 1000 }),
@@ -171,9 +173,9 @@ describe("OneBot private common host", () => {
     expect(h.db.query("SELECT * FROM qq_send_log").all()).toEqual([]);
     expect(h.requests).toHaveLength(2);
     expect(h.requests[0]!.messages[0]!.content).not.toEqual(h.requests[1]!.messages[0]!.content);
-    expect(
-      h.db.query("SELECT status FROM agent_runs WHERE spec_id='onebot.private.main'").get(),
-    ).toEqual({ status: "completed" });
+    expect(h.db.query("SELECT status FROM agent_runs WHERE spec_id='onebot.main'").get()).toEqual({
+      status: "completed",
+    });
   });
   it("re-enters deciding for a same-second inbound message during generation", async () => {
     let receive: ReturnType<typeof setup>["receive"];
@@ -516,7 +518,7 @@ describe("private feature preservation", () => {
       h.db.query("DELETE FROM memory_entries WHERE id=?").run(id);
     };
     h.receive("1", "apples");
-    await expect(activate(h)).rejects.toThrow("CONTEXT_SOURCE_INVALID");
+    await expect(activate(h)).rejects.toMatchObject({ code: "CONTEXT_SOURCE_INVALID" });
     expect(h.outbox.list({})).toEqual([]);
     expect(h.journal.ensureOneBot(bindingId)!.consumedSeq).toBe(0);
     expect(
@@ -685,6 +687,11 @@ describe("private initiative and cancellation", () => {
     let judgement: ModelRequest | undefined;
     const h = setup({
       complete: async (req) => {
+        if ((req.responseSchema?.properties as Record<string, unknown> | undefined)?.ids) {
+          const text = req.messages[1]!.content.find((p) => p.kind === "text");
+          const data = JSON.parse(text?.kind === "text" ? text.text : "{}");
+          return JSON.stringify({ ids: data.candidates.map((c: { id: string }) => c.id) });
+        }
         if ((req.responseSchema?.properties as Record<string, unknown> | undefined)?.score) {
           judgement = req;
           return '{"score":0}';
@@ -694,7 +701,7 @@ describe("private initiative and cancellation", () => {
           : '{"kind":"none"}';
       },
     });
-    setMemoryMode(h, "off");
+    setMemoryMode(h, "full_body");
     addMemory(h);
     const repo = new KnowledgeRepository(h.db);
     const doc = repo.importDocument({
@@ -747,9 +754,9 @@ describe("private initiative and cancellation", () => {
     await expect(h.host.activate(wake, controller.signal)).rejects.toThrow();
     expect(h.outbox.list({})).toEqual([]);
     expect(h.journal.ensureOneBot(bindingId)!.consumedSeq).toBe(0);
-    expect(
-      h.db.query("SELECT status FROM agent_runs WHERE spec_id='onebot.private.main'").get(),
-    ).toEqual({ status: "cancelled" });
+    expect(h.db.query("SELECT status FROM agent_runs WHERE spec_id='onebot.main'").get()).toEqual({
+      status: "cancelled",
+    });
   });
   it("retention during an in-flight send erases payload but still accepts the eventual receipt", async () => {
     const h = setup();

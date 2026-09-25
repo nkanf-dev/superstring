@@ -7,6 +7,7 @@ export type OutboundTarget = {
   conversationKind: "private" | "group";
   peerId: string;
   participantId?: string;
+  attentionMembers?: readonly string[];
   agentId: string;
   bindingId: string;
   bindingEpoch: number;

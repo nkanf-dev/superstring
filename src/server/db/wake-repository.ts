@@ -179,9 +179,18 @@ export class WakeRepository {
     // Opportunities covered by this successful observation are consumed, not their source messages.
     this.db
       .query(
-        "UPDATE wake_signals SET status=?,completed_at=? WHERE conversation_id=? AND cause=? AND status='pending' AND through_seq<=?",
+        "UPDATE wake_signals SET status=?,completed_at=? WHERE conversation_id=? AND cause=? AND status='pending' AND through_seq<=? AND ready_at<=?",
       )
-      .run(status, at, r.conversationId, r.cause, throughSeq);
+      .run(status, at, r.conversationId, r.cause, throughSeq, at);
+  }
+  /** Waiting for a configured cadence is not a failed model attempt. */
+  defer(id: string, token: string, readyAt: string, at: string): void {
+    if (!this.owns(id, token, at)) throw new Error("WAKE_LEASE_LOST");
+    this.db
+      .query(
+        "UPDATE wake_signals SET status='pending',lease_token=NULL,lease_expires_at=NULL,ready_at=?,attempts=MAX(0,attempts-1) WHERE id=?",
+      )
+      .run(readyAt, id);
   }
   fail(
     id: string,
