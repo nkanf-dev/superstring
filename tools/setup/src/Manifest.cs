@@ -156,6 +156,10 @@ namespace Superstring.Setup
                 throw new InvalidDataException("MANIFEST_MISSING_REQUIRED: app/resources/migrations/versions/0038_qq_judgement_model.sql");
             if (manifest.SchemaVersion >= 39 && !seen.Contains("app/resources/migrations/versions/0039_agent_runs.sql"))
                 throw new InvalidDataException("MANIFEST_MISSING_REQUIRED: app/resources/migrations/versions/0039_agent_runs.sql");
+            if (manifest.SchemaVersion >= 40 && !seen.Contains("app/resources/migrations/versions/0040_conversation_wakes.sql"))
+                throw new InvalidDataException("MANIFEST_MISSING_REQUIRED: app/resources/migrations/versions/0040_conversation_wakes.sql");
+            if (manifest.SchemaVersion >= 41 && !seen.Contains("app/resources/migrations/versions/0041_outbound_intents.sql"))
+                throw new InvalidDataException("MANIFEST_MISSING_REQUIRED: app/resources/migrations/versions/0041_outbound_intents.sql");
             var launcher = root.ContainsKey("launcher") ? root["launcher"] as Dictionary<string, object> : null;
             if (launcher == null) throw new InvalidDataException("MANIFEST_MISSING_LAUNCHER");
             manifest.Launcher = new FileRecord
