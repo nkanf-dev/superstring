@@ -476,16 +476,22 @@ export class QqIntakeRuntime {
     void handleQqRecordedMessage(
       this.#options.orm,
       { observation, nowSeconds: this.#now() },
-      media ? { media } : {},
+      {
+        media,
+        onMediaRead: (eventKey) => {
+          const binding = readBindingByConversation(this.#options.orm, {
+            accountId: observation.accountId,
+            kind: observation.conversation.kind,
+            peerId: observation.conversation.peerId,
+          });
+          if (binding) this.#options.conversationIngress?.afterMedia(binding.id, eventKey);
+        },
+        ...(this.#options.conversationIngress
+          ? { dispatch: () => ({ kind: "not_scheduled" as const, reason: "conversation_ingress" }) }
+          : {}),
+      },
     )
       .then((result) => {
-        const binding = readBindingByConversation(this.#options.orm, {
-          accountId: observation.accountId,
-          kind: observation.conversation.kind,
-          peerId: observation.conversation.peerId,
-        });
-        if (binding)
-          this.#options.conversationIngress?.afterMedia(binding.id, observation.eventKey);
         this.#options.onEvent?.({
           kind: "follow_up",
           hasMedia: result.media.hasMedia,
