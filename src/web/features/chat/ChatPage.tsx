@@ -25,6 +25,8 @@ export function ChatPage() {
   }, []);
   const sessions = useSuperstringStore((state) => state.sessions);
   const currentSessionId = useSuperstringStore((state) => state.currentSessionId);
+  const canonicalId = useSuperstringStore((state) => state.currentConversationId);
+  const resolving = !!currentSessionId && !canonicalId;
   const chat = useSuperstringStore(currentChat);
   const {
     messages,
@@ -262,13 +264,13 @@ export function ChatPage() {
           }}
           placeholder={t("输入消息…")}
           rows={2}
-          disabled={sending}
+          disabled={sending || resolving}
         />
         <div className="composer-actions">
           <span>{t("Enter 发送 · Shift + Enter 换行")}</span>
           <ContextUsagePanel />
           {failedChat?.sessionId === currentSessionId && (
-            <button type="button" disabled={sending} onClick={() => void retryChat()}>
+            <button type="button" disabled={sending || resolving} onClick={() => void retryChat()}>
               {t("重试原请求")}
             </button>
           )}
@@ -276,7 +278,7 @@ export function ChatPage() {
             type="button"
             className="primary"
             aria-label={sending ? t("生成中") : t("发送")}
-            disabled={sending}
+            disabled={sending || resolving}
             onClick={() => void send()}
           >
             {sending ? t("生成中") : t("发送")}
