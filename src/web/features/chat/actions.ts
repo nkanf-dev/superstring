@@ -136,12 +136,17 @@ export function createChatActions(set: StoreSet, get: StoreGet): Actions {
       get().apiClient.getSessionRuntime(initial.sessionId),
     ]);
     if (get().conversationById[id]?.loadRevision !== revision) return;
-    const recover =
-      !chatBusy(get().conversationById[id]) ||
-      (get().conversationById[id].phase === "reconciling" && !get().conversationById[id].request);
+    const recoveryRead =
+      get().conversationById[id].phase === "reconciling" && !get().conversationById[id].request;
+    const recover = !chatBusy(get().conversationById[id]) || recoveryRead;
     write(id, (view) => ({
-      ...(messages.status === "fulfilled" && !chatBusy(view)
-        ? { messages: messages.value.map(toChatItem) }
+      ...(messages.status === "fulfilled" && (!chatBusy(view) || recoveryRead)
+        ? {
+            messages: messages.value.map(toChatItem),
+            ...(recoveryRead && !messages.value.some((item) => item.status === "pending")
+              ? { phase: "idle" as const, feedback: "" }
+              : {}),
+          }
         : {}),
       runtimeConfig: runtime.status === "fulfilled" ? runtime.value : null,
       runtimeConfigUnavailable: runtime.status === "rejected",

@@ -412,3 +412,24 @@ it("a late sidebar refresh cannot recreate a session deleted while another chat 
     store.getState().directoryIds.map((id) => store.getState().summaryById[id].sourceId),
   ).toEqual(["a"]);
 });
+
+it("read-only recovery settles a completed message when the earlier run lookup failed", async () => {
+  const stream = vi.fn(async () => {});
+  const listMessages = vi
+    .fn()
+    .mockResolvedValueOnce([userMessage, pendingMessage])
+    .mockResolvedValueOnce([userMessage, message("reply", "finished while disconnected")]);
+  setup(
+    { listMessages, listRuns: vi.fn().mockRejectedValueOnce(Error("lookup unavailable")) },
+    { streamChatV2: stream },
+  );
+  await store.getState().selectSession("a");
+  expect(currentChat(store.getState())).toMatchObject({ phase: "reconciling", request: null });
+  await store.getState().reconcileChat();
+  expect(currentChat(store.getState())).toMatchObject({ phase: "idle", error: null, feedback: "" });
+  expect(currentChat(store.getState()).messages.at(-1)).toMatchObject({
+    status: "completed",
+    content: "finished while disconnected",
+  });
+  expect(stream).not.toHaveBeenCalled();
+});
