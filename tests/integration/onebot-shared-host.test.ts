@@ -1,21 +1,22 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { openBusinessDb } from "../../src/server/db/schema-gate";
-import { ensureDefaults, DEFAULT_AGENT_ID } from "../../src/server/db/repositories";
-import { updateQqSettings } from "../../src/server/db/qq-settings-repository";
-import { createQqScheme } from "../../src/server/db/qq-scheme-repository";
-import { QQ_RHYTHM_DEFAULT } from "../../src/server/services/qq-rhythm-contract";
+import { AgentRuntime } from "../../src/server/agent/agent-runtime";
+import type { ModelPort, ModelRequest } from "../../src/server/agent/model-port";
 import { OneBot11Adapter } from "../../src/server/channels/onebot11/adapter";
 import { OneBotHost } from "../../src/server/channels/onebot11/bot-host";
+import { OutboundDelivery } from "../../src/server/conversation/outbound-delivery";
+import { AgentRunRepository } from "../../src/server/db/agent-run-repository";
 import { ConversationEventRepository } from "../../src/server/db/conversation-event-repository";
 import { OutboundIntentRepository } from "../../src/server/db/outbound-intent-repository";
-import { WakeRepository } from "../../src/server/db/wake-repository";
-import { AgentRunRepository } from "../../src/server/db/agent-run-repository";
-import { AgentRuntime } from "../../src/server/agent/agent-runtime";
-import { type ModelPort, type ModelRequest } from "../../src/server/agent/model-port";
-import { recordInbound } from "../../src/server/services/qq-intake";
-import { normalizeOneBotMessage } from "../../src/server/services/onebot-protocol";
-import { OutboundDelivery } from "../../src/server/conversation/outbound-delivery";
+import { createQqScheme } from "../../src/server/db/qq-scheme-repository";
 import { recordQqSend } from "../../src/server/db/qq-send-repository";
+import { updateQqSettings } from "../../src/server/db/qq-settings-repository";
+import { DEFAULT_AGENT_ID, ensureDefaults } from "../../src/server/db/repositories";
+import { openBusinessDb } from "../../src/server/db/schema-gate";
+import { WakeRepository } from "../../src/server/db/wake-repository";
+import { normalizeOneBotMessage } from "../../src/server/services/onebot-protocol";
+import { recordInbound } from "../../src/server/services/qq-intake";
+import { QQ_RHYTHM_DEFAULT } from "../../src/server/services/qq-rhythm-contract";
+
 const handles: ReturnType<typeof openBusinessDb>[] = [];
 afterEach(() => {
   for (const h of handles.splice(0)) h.close();
@@ -487,8 +488,7 @@ describe("failed generation and observation epochs", () => {
     const h = setup({
       complete: async () => generate(["20002"]),
       async *streamText() {
-        throw new Error("MODEL_FAILURE");
-        yield "never";
+        yield await Promise.reject<string>(new Error("MODEL_FAILURE"));
       },
     });
     h.receive("1", "20002", true);

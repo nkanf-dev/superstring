@@ -1,16 +1,17 @@
 import { afterEach, expect, it } from "bun:test";
-import { createRuntime, type SuperstringRuntime } from "../../src/server/runtime";
-import { openBusinessDb } from "../../src/server/db/schema-gate";
-import { ensureDefaults, DEFAULT_AGENT_ID } from "../../src/server/db/repositories";
-import { updateQqSettings } from "../../src/server/db/qq-settings-repository";
-import { createQqScheme } from "../../src/server/db/qq-scheme-repository";
+import { OneBot11Adapter } from "../../src/server/channels/onebot11/adapter";
 import { ConversationEventRepository } from "../../src/server/db/conversation-event-repository";
 import { OutboundIntentRepository } from "../../src/server/db/outbound-intent-repository";
+import { createQqScheme } from "../../src/server/db/qq-scheme-repository";
+import { updateQqSettings } from "../../src/server/db/qq-settings-repository";
+import { DEFAULT_AGENT_ID, ensureDefaults } from "../../src/server/db/repositories";
+import { openBusinessDb } from "../../src/server/db/schema-gate";
 import { WakeRepository } from "../../src/server/db/wake-repository";
-import { OneBot11Adapter } from "../../src/server/channels/onebot11/adapter";
-import { recordInbound, type QqIntakeRuntime } from "../../src/server/services/qq-intake";
-import { normalizeOneBotMessage } from "../../src/server/services/onebot-protocol";
 import type { ModelGateway } from "../../src/server/llm/model-gateway";
+import { createRuntime, type SuperstringRuntime } from "../../src/server/runtime";
+import { normalizeOneBotMessage } from "../../src/server/services/onebot-protocol";
+import { type QqIntakeRuntime, recordInbound } from "../../src/server/services/qq-intake";
+
 const runtimes: SuperstringRuntime[] = [];
 afterEach(async () => {
   for (const runtime of runtimes.splice(0)) await runtime.stop();

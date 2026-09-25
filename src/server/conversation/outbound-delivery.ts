@@ -1,4 +1,3 @@
-import { observationRelevant } from "./observation-relevance";
 import type { Delivery } from "../../shared/contracts/conversation";
 import type { ConversationEventRepository } from "../db/conversation-event-repository";
 import type { OutboundIntentRepository, OutboundTarget } from "../db/outbound-intent-repository";
@@ -10,6 +9,7 @@ import {
   type QqStickerFileReference,
   qqTextSegments,
 } from "../services/qq-send-transport";
+import { observationRelevant } from "./observation-relevance";
 
 /** Durable side effects. No model call can occur inside a transport transaction. */
 export class OutboundDelivery {

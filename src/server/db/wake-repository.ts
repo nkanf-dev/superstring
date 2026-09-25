@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
-import { ConversationEventRepository } from "./conversation-event-repository";
 import type { WakeSignal } from "../../shared/contracts/conversation";
+import { ConversationEventRepository } from "./conversation-event-repository";
 
 type Row = {
   id: string;

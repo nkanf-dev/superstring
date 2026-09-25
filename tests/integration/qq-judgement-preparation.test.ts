@@ -14,19 +14,19 @@ import { updateQqSettings } from "../../src/server/db/qq-settings-repository";
 import { ensureDefaults, nowIso, type Orm } from "../../src/server/db/repositories";
 import * as schema from "../../src/server/db/schema";
 import { openBusinessDb } from "../../src/server/db/schema-gate";
-import { runQqInitiativeCycle } from "../fixtures/legacy-qq/qq-initiative-cycle";
 import { prepareQqJudgement } from "../../src/server/services/qq-judgement-preparation";
-import { runQqJudgement } from "../fixtures/legacy-qq/qq-judgement-runner";
 import {
   QQ_JUDGEMENT_RESPONSE_SCHEMA,
   QQ_PROMPT_DEFAULTS,
 } from "../../src/server/services/qq-prompt-contract";
-import { recomputeQqReply } from "../fixtures/legacy-qq/qq-recompute-runner";
-import { generateQqTextReply } from "../fixtures/legacy-qq/qq-reply-runner";
 import {
   QQ_REVIEW_RESPONSE_SCHEMA,
   qqReviewVerdict,
 } from "../../src/server/services/qq-review-contract";
+import { runQqInitiativeCycle } from "../fixtures/legacy-qq/qq-initiative-cycle";
+import { runQqJudgement } from "../fixtures/legacy-qq/qq-judgement-runner";
+import { recomputeQqReply } from "../fixtures/legacy-qq/qq-recompute-runner";
+import { generateQqTextReply } from "../fixtures/legacy-qq/qq-reply-runner";
 import { pendingQqReview, reviewQqSupplement } from "../fixtures/legacy-qq/qq-review-runner";
 import { checkQqTextPreflight } from "../fixtures/legacy-qq/qq-send-preflight";
 
