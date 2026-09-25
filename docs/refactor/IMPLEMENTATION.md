@@ -16,4 +16,8 @@ No existing feature may be simplified, downgraded, or omitted. Enhancements are 
 
 Baseline on d3167e4 after installing declared missing dependencies: typecheck/check passed; 1,490 full integration tests across 82 files passed (including 132 focused tests); 416 frontend tests across 35 files passed.
 
-Implementation validation pending. Live model, OneBot, browser, and Windows evidence must be reported separately from automated tests.
+PR 1 integrated source ecb2bad: 1,525 integration tests across 85 files passed (5,253 assertions); 427 frontend tests across 36 files passed. Typecheck, Biome (411 files), and Vite production build passed. Vite reports its existing large-bundle advisory; no bundle optimization is claimed.
+
+All old behavior assertions remain. Schema tests advance current version/table counts for additive 0039; original 0001–0038 SQL fingerprints are unchanged. The first integrated run found six failures; after merging pending runtime fixes and updating schema expectations, the stable integrated head passed the complete suite.
+
+Frontend browser fixture verification covers desktop, 320px, on-demand context inspection, partial media and focus return; see ../verification/pr1-frontend/README.md. This is fixture evidence, not real model/OneBot validation. Real model endpoints, real OneBot delivery, Windows packaging, assistive technology and integrated production-browser flows remain unverified. Draft PR status does not mean those gates passed.
