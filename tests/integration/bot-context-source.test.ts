@@ -3,7 +3,10 @@ import { createAgentRuntime } from "../../src/server/agent/agent-runtime";
 import type { AgentSpec } from "../../src/server/agent/agent-specs";
 import { ContextEngine } from "../../src/server/agent/context-engine";
 import { ConversationCompressor } from "../../src/server/agent/conversation-compression";
-import { BotContextSource } from "../../src/server/channels/onebot11/context-source";
+import {
+  BotContextSource,
+  type BotContextSourceOptions,
+} from "../../src/server/channels/onebot11/context-source";
 import { AgentRunRepository } from "../../src/server/db/agent-run-repository";
 import { ConversationEventRepository } from "../../src/server/db/conversation-event-repository";
 import { KnowledgeRepository } from "../../src/server/db/knowledge-repository";
@@ -41,6 +44,8 @@ function setup(
     decisionTier?: "judgement" | "reply";
     tokenBudget?: number;
     mode?: RuntimeConfig["p5_config"]["retrieval_mode"];
+    modules?: BotContextSourceOptions["modules"];
+    resolveSource?: BotContextSourceOptions["resolveSource"];
   } = {},
 ) {
   const h = openBusinessDb();
@@ -124,6 +129,8 @@ function setup(
     journal,
     outbox,
     conversationId: conversation.id,
+    modules: input.modules,
+    resolveSource: input.resolveSource,
     binding,
     snapshot: capture.snapshot,
     scheme,
@@ -256,6 +263,35 @@ describe("shared Bot context source", () => {
       }
     },
   );
+  it("accepts a replaceable query backend with explicit source authority and rejects its later revocation", async () => {
+    let valid = true,
+      reads = 0;
+    const remote = { kind: "remote_document", id: "doc", revision: "7" };
+    const h = setup({
+      modules: () => ({
+        memory: { query: async () => [] },
+        knowledge: {
+          query: async () => {
+            reads++;
+            return [{ id: "remote", text: "external knowledge", sources: [remote] }];
+          },
+        },
+      }),
+      resolveSource: (source) =>
+        source.kind === "remote_document" ? (valid ? "available" : "revoked") : undefined,
+    });
+    h.seed("question");
+    const material = await h.source.read(readInput());
+    expect(material.evidence?.[0].text).toBe("external knowledge");
+    expect(material.sources).toContainEqual(remote);
+    await h.source.read(readInput());
+    expect(reads).toBe(1);
+    valid = false;
+    await expect(h.source.read(readInput())).rejects.toMatchObject({
+      code: "CONTEXT_SOURCE_INVALID",
+    });
+  });
+
   it("injects semantic knowledge initially with grant provenance and rejects revocation on reuse", async () => {
     const h = setup();
     h.seed("apples?");

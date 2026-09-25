@@ -38,7 +38,12 @@ import { ownSpeechSince } from "../../db/qq-speech-repository";
 import { DEFAULT_USER_ID, type Orm } from "../../db/repositories";
 import { AppError, fail } from "../../errors";
 import type { ChatMessage, ModelGateway } from "../../llm/model-gateway";
-import { SqliteKnowledgeModule } from "../../modules/knowledge-module";
+import {
+  createSqliteQueryFactory,
+  type ModuleQueryFactory,
+  type ModuleSourceResolver,
+} from "../../modules/composition";
+import type { KnowledgeModule, MemoryModule } from "../../modules/contracts";
 import { SqliteMemoryModule } from "../../modules/memory-module";
 import { contextDumps, estimateMessages } from "../../modules/memory-query";
 import { contentBlocks } from "../../services/content-format";
@@ -74,6 +79,8 @@ export interface BotContextSourceOptions {
   orm: Orm;
   gateway: Pick<ModelGateway, "loadedContextCapacity">;
   agentRuntime: AgentRuntime;
+  modules?: ModuleQueryFactory;
+  resolveSource?: ModuleSourceResolver;
   journal: ConversationEventRepository;
   outbox: OutboundIntentRepository;
   conversationId: string;
@@ -106,8 +113,8 @@ export class BotContextSource {
   private readonly capacities = new Map<string, number>();
   private readonly engine = new ContextEngine();
   private readonly owner: RunOwner;
-  private readonly memory: SqliteMemoryModule;
-  private readonly knowledge: SqliteKnowledgeModule;
+  private readonly memory: MemoryModule;
+  private readonly knowledge: KnowledgeModule;
   private readonly compressor: ConversationCompressor;
   private observations: readonly ActionObservation[] = [];
   private sequence = 0;
@@ -119,21 +126,12 @@ export class BotContextSource {
       userId: DEFAULT_USER_ID,
       agentId: o.binding.agentId,
     };
-    this.memory = new SqliteMemoryModule({
-      orm: o.orm,
-      runtime: () => o.runtime,
-      gateway: o.gateway,
-      agentRuntime: o.agentRuntime,
-      assertCurrent: () => this.assertCurrent(),
+    const modules = (o.modules ?? createSqliteQueryFactory(o))({
+      runtime: o.runtime,
       assertSources: (sources) => this.assertSources(sources),
     });
-    this.knowledge = new SqliteKnowledgeModule({
-      db: o.db,
-      runtime: () => o.runtime,
-      gateway: o.gateway,
-      agentRuntime: o.agentRuntime,
-      assertSources: (sources) => this.assertSources(sources),
-    });
+    this.memory = modules.memory;
+    this.knowledge = modules.knowledge;
     this.compressor = new ConversationCompressor({
       runtime: o.runtime,
       gateway: o.gateway,
@@ -321,7 +319,12 @@ export class BotContextSource {
   private assertSources(sources: readonly SourceRef[], hostCheck = true): void {
     const o = this.options;
     if (hostCheck) o.assertCurrent();
-    const refs = sources.filter((source) => source.kind === "memory");
+    const resolved = new Map(
+      sources.map((source) => [source, o.resolveSource?.(source, this.owner, this.now())]),
+    );
+    const refs = sources.filter(
+      (source) => source.kind === "memory" && resolved.get(source) === undefined,
+    );
     const memory = new Map(
       (refs.length
         ? memoryBodiesByScopeKeys(
@@ -334,10 +337,15 @@ export class BotContextSource {
       ).map((item) => [item.id, item.revision]),
     );
     for (const source of sources) {
-      if (source.kind === "memory" && memory.get(source.id) !== source.revision)
+      if (
+        source.kind === "memory" &&
+        resolved.get(source) === undefined &&
+        memory.get(source.id) !== source.revision
+      )
         fail("CONTEXT_SOURCE_INVALID", "已选记忆正文或作用域发生变化");
       if (
-        sourceAccess(o.db, source, this.owner, { userId: DEFAULT_USER_ID }, this.now()) !==
+        (resolved.get(source) ??
+          sourceAccess(o.db, source, this.owner, { userId: DEFAULT_USER_ID }, this.now())) !==
         "available"
       )
         fail("CONTEXT_SOURCE_INVALID", "上下文来源已变更、过期或撤权");
