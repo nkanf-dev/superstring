@@ -23,6 +23,7 @@ import { newestMemberMessageSeconds } from "../../db/qq-speech-repository";
 import { DEFAULT_USER_ID, getAgentRow, type Orm } from "../../db/repositories";
 import type { WakeRepository } from "../../db/wake-repository";
 import type { ModelGateway } from "../../llm/model-gateway";
+import type { ModuleQueryFactory, ModuleSourceResolver } from "../../modules/composition";
 import { captureQqTask, checkQqTask, qqConversationKey } from "../../services/qq-binding-contract";
 import {
   attentionTriggerFilter,
@@ -56,6 +57,8 @@ export interface OneBotPolicy {
   retentionDays: number;
 }
 export interface OneBotHostOptions {
+  modules?: ModuleQueryFactory;
+  resolveSource?: ModuleSourceResolver;
   orm: Orm;
   agentRuntime: AgentRuntime;
   host?: ConversationHost;
@@ -132,6 +135,31 @@ export class OneBotHost {
     ) {
       settleOpportunity();
       return { status: "expired" as const };
+    }
+    // Different immediate causes can describe the same person's already answered input.
+    // Coverage belongs to the actual output audience and observed source sequence, not the
+    // conversation-wide cursor: replying to one member must not consume another member's turn.
+    if (!initiative && focusKey && focus) {
+      const covered = db
+        .query(`
+        SELECT i.status FROM outbound_intents i
+        WHERE i.conversation_id=? AND i.source_through_seq>=?
+          AND (json_extract(i.target,'$.participantId') IS NULL OR json_extract(i.target,'$.participantId')=?)
+          AND i.status IN('confirmed','failed','unknown','stale')
+          AND EXISTS(SELECT 1 FROM outbound_parts p WHERE p.intent_id=i.id
+            AND p.attempted_at IS NOT NULL AND p.status IN('confirmed','failed','unknown','not_sent'))
+        ORDER BY i.status='confirmed' DESC,i.created_at DESC LIMIT 1
+      `)
+        .get(conversation.id, focus.seq, focus.participant?.id ?? null) as {
+        status: string;
+      } | null;
+      if (covered) {
+        settleOpportunity();
+        return {
+          status: "no_output" as const,
+          reason: covered.status === "confirmed" ? "already_replied" : "already_attempted",
+        };
+      }
     }
     const preparation = () =>
       prepareQqJudgement(
@@ -237,6 +265,8 @@ export class OneBotHost {
     spec.instructions = observationEpoch(0);
     let runId: string | undefined;
     const source = new BotContextSource({
+      modules: o.modules,
+      resolveSource: o.resolveSource,
       db,
       orm: o.orm,
       gateway: o.gateway,

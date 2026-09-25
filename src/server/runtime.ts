@@ -23,8 +23,12 @@ import {
   resolveLmStudioConfig,
 } from "./llm/model-gateway";
 import { createLmStudioVisionClient } from "./llm/vision-client";
+import {
+  createSqliteModules,
+  type ModuleComposition,
+  type ModuleSourceResolver,
+} from "./modules/composition";
 import { DEFAULT_MODEL_PROVIDER_KEY_PATH } from "./secret-box";
-import { KnowledgeOrganizer } from "./services/knowledge-organizer";
 import { MemoryService } from "./services/memory-service";
 import { QqIntakeRuntime } from "./services/qq-intake";
 import type { QqSendPort } from "./services/qq-send-transport";
@@ -47,6 +51,8 @@ export interface RuntimeOptions {
   gateway?: ModelGateway;
   business?: BusinessDbHandle;
   memoryService?: MemoryService;
+  modules?: ModuleComposition;
+  resolveSource?: ModuleSourceResolver;
   /** Timer/lifecycle host; model work is exclusively owned by AgentRuntime. */
   botWorker?: BotWorker;
   /**
@@ -76,6 +82,7 @@ export interface SuperstringRuntime {
   business: BusinessDbHandle;
   gateway: ModelGateway;
   memoryService: MemoryService;
+  modules: ModuleComposition;
   agentRuntime: AgentRuntime;
   botWorker: BotWorker;
   qqIntake: QqIntakeRuntime;
@@ -100,7 +107,7 @@ export function createRuntime(options: RuntimeOptions = {}): SuperstringRuntime 
   let botWorker: BotWorker;
   let qqIntake: QqIntakeRuntime;
   let app: Hono;
-  let knowledgeOrganizer: KnowledgeOrganizer;
+  let modules: ModuleComposition;
   let bot: ReturnType<typeof createOneBotConversationRuntime>;
   let stopping = false;
   try {
@@ -133,7 +140,15 @@ export function createRuntime(options: RuntimeOptions = {}): SuperstringRuntime 
     memoryService =
       options.memoryService ??
       new MemoryService({ orm: business.orm, db: business.db, gateway, agentRuntime });
-    knowledgeOrganizer = new KnowledgeOrganizer({ db: business.db, gateway, agentRuntime });
+    modules =
+      options.modules ??
+      createSqliteModules({
+        db: business.db,
+        orm: business.orm,
+        gateway,
+        agentRuntime,
+        memoryWorker: memoryService,
+      });
     const stickerStore = new QqStickerStore({
       directory: options.qqStickerDirectory ?? DEFAULT_QQ_STICKER_DIRECTORY,
     });
@@ -153,6 +168,8 @@ export function createRuntime(options: RuntimeOptions = {}): SuperstringRuntime 
       port,
       wake: () => botWorker.wake(),
       policy: options.botConversationPolicy,
+      modules: modules.bind,
+      resolveSource: options.resolveSource,
     });
     botWorker =
       options.botWorker ??
@@ -181,6 +198,7 @@ export function createRuntime(options: RuntimeOptions = {}): SuperstringRuntime 
         // it to the intake runtime is what turns "media is recorded" into "media is understood".
         media: { vision: visionClient, agentRuntime },
         conversationIngress: bot.adapter,
+        memory: modules.memory,
         // 「被 @ 了别等轮询」（2026-09-25）：入站路径记下一条冲着她来的消息就叫醒宿主跑一轮。
         onAddressedMessage: () => botWorker.wake(),
       });
@@ -191,6 +209,8 @@ export function createRuntime(options: RuntimeOptions = {}): SuperstringRuntime 
       agentRuntime,
       conversationHost: host,
       conversationJournal: journal,
+      modules,
+      resolveSource: options.resolveSource,
       qqTransportKeyPath: options.qqTransportKeyPath,
       modelProviderKeyPath: options.modelProviderKeyPath,
       // The page reads the transport's own state; nothing is inferred from a saved endpoint.
@@ -212,6 +232,7 @@ export function createRuntime(options: RuntimeOptions = {}): SuperstringRuntime 
     business,
     gateway,
     memoryService,
+    modules,
     agentRuntime,
     botWorker,
     qqIntake,
@@ -223,8 +244,7 @@ export function createRuntime(options: RuntimeOptions = {}): SuperstringRuntime 
         bot.delivery.housekeep();
       }, 60_000);
       contextSweep.unref();
-      memoryService.start();
-      knowledgeOrganizer.start();
+      modules.start();
       botWorker.start();
       // Refuses on its own while the third-party switch is off or the saved configuration is
       // incomplete, so an unconfigured installation produces no traffic and no login.
@@ -235,10 +255,11 @@ export function createRuntime(options: RuntimeOptions = {}): SuperstringRuntime 
       stopped = true;
       stopping = true;
       if (contextSweep !== null) clearInterval(contextSweep);
+      bot.delivery.stop();
       qqIntake.stop();
       bot.scheduler.stop();
       await botWorker.stop();
-      if (started) await Promise.all([memoryService.stop(), knowledgeOrganizer.stop()]);
+      if (started) await modules.stop();
       business.close();
     },
   };

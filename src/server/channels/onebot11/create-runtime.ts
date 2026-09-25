@@ -14,6 +14,7 @@ import { readQqSettings } from "../../db/qq-settings-repository";
 import { DEFAULT_USER_ID, getAgentRow, type Orm } from "../../db/repositories";
 import { WakeRepository } from "../../db/wake-repository";
 import type { ModelGateway } from "../../llm/model-gateway";
+import type { ModuleQueryFactory, ModuleSourceResolver } from "../../modules/composition";
 import { QQ_OBSERVATION_RETENTION_DAYS } from "../../services/qq-retention";
 import { type QqSendPort, qqStickerFileReference } from "../../services/qq-send-transport";
 import { qqStickerSelectionForScheme } from "../../services/qq-sticker-candidates";
@@ -52,6 +53,8 @@ export function createOneBotConversationRuntime(options: {
   port: QqSendPort;
   wake: () => void;
   policy?: Partial<BotConversationPolicy>;
+  modules?: ModuleQueryFactory;
+  resolveSource?: ModuleSourceResolver;
 }) {
   const { orm, db, journal } = options;
   const policy = { ...DEFAULT_BOT_CONVERSATION_POLICY, ...options.policy };
@@ -134,8 +137,14 @@ export function createOneBotConversationRuntime(options: {
       };
       return (target.sources ?? []).every(
         (source) =>
-          sourceAccess(db, source, owner, { userId: DEFAULT_USER_ID }, new Date().toISOString()) ===
-          "available",
+          (options.resolveSource?.(source, owner, new Date().toISOString()) ??
+            sourceAccess(
+              db,
+              source,
+              owner,
+              { userId: DEFAULT_USER_ID },
+              new Date().toISOString(),
+            )) === "available",
       );
     },
     onStale(intent) {

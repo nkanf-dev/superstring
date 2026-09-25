@@ -537,3 +537,91 @@ describe("failed generation and observation epochs", () => {
     expect(h.outbox.list({})).toHaveLength(1);
   });
 });
+
+describe("immediate opportunity coverage", () => {
+  function previousSpeech(h: ReturnType<typeof setup>) {
+    recordQqSend(
+      h.orm,
+      {
+        scope: {
+          kind: "qq",
+          accountId: "10001",
+          conversationKind: "group",
+          peerId: "30003",
+          agentId: DEFAULT_AGENT_ID,
+        },
+        kind: "direct_reply",
+        parts: [{ kind: "text", result: "confirmed", messageId: "previous" }],
+        text: "previous",
+        sentAtSeconds: time - 10,
+      },
+      undefined,
+      h.db,
+    );
+  }
+  function transport(h: ReturnType<typeof setup>, status: "confirmed" | "failed" | "unknown") {
+    return new OutboundDelivery({
+      orm: h.orm,
+      repository: h.outbox,
+      journal: h.journal,
+      now: h.now,
+      stickerFile: () => null,
+      authorize: () => true,
+      port: {
+        async send() {
+          return status === "confirmed"
+            ? { kind: "confirmed", messageId: "receipt" }
+            : status === "unknown"
+              ? { kind: "unknown", reason: "timeout" }
+              : { kind: "failed", retcode: 500 };
+        },
+      },
+    });
+  }
+  it.each(["confirmed", "failed", "unknown"] as const)(
+    "does not repeat covered same-person input after a %s direct attempt",
+    async (status) => {
+      const h = setup({ complete: async () => generate(["20002"]) });
+      previousSpeech(h);
+      h.receive("1", "20002", false);
+      h.clock.seconds++;
+      h.receive("2", "20002", true);
+      await h.activate("direct_reply");
+      await transport(h, status).runOnce();
+      const c = h.journal.ensureOneBot(bindingId)!;
+      const idle = h.wakes.enqueue({
+        conversationId: c.id,
+        cause: "idle_topic",
+        throughSeq: h.journal.sourceThroughSeq(c.id),
+        dedupeKey: "unrelated-idle",
+        readyAt: h.now(),
+        at: h.now(),
+        priority: 0,
+      });
+      expect(await h.activate("follow_up")).toMatchObject({
+        status: "no_output",
+        reason: status === "confirmed" ? "already_replied" : "already_attempted",
+      });
+      expect(
+        h.db.query("SELECT COUNT(*) AS n FROM agent_runs WHERE spec_id='onebot.main'").get(),
+      ).toEqual({ n: 1 });
+      expect(h.wakes.get(idle.id)?.status).toBe("pending");
+      h.clock.seconds++;
+      h.receive("3", "20002", false, "a genuinely new input");
+      expect((await h.activate("follow_up")).status).toBe("completed");
+      expect(h.outbox.list({})).toHaveLength(2);
+    },
+  );
+  it("does not consume another participant merely because the first reply observed their input", async () => {
+    let decisions = 0;
+    const h = setup({ complete: async () => generate([++decisions === 1 ? "20003" : "20002"]) });
+    previousSpeech(h);
+    h.receive("1", "20002", false);
+    h.clock.seconds++;
+    h.receive("2", "20003", true);
+    await h.activate("direct_reply");
+    await transport(h, "confirmed").runOnce();
+    expect((await h.activate("follow_up")).status).toBe("completed");
+    expect(h.outbox.list({}).map((d) => d.target?.participantId)).toEqual(["20003", "20002"]);
+  });
+});
