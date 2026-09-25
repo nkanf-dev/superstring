@@ -2,6 +2,20 @@ import { describe, expect, it } from "bun:test";
 import { BotWorker } from "../../src/server/conversation/bot-worker";
 
 describe("neutral Bot worker lifecycle", () => {
+  it("finishes shutdown when a concurrent manual cycle fails", async () => {
+    let reject!: (error: Error) => void;
+    const pending = new Promise<void>((_resolve, fail) => {
+      reject = fail;
+    });
+    const worker = new BotWorker({ sweep() {}, canAdvance: () => true, advance: () => pending });
+    const cycle = worker.runCycle();
+    await Promise.resolve();
+    const stopping = worker.stop();
+    reject(new Error("fixture cycle failure"));
+    await expect(cycle).rejects.toThrow("fixture cycle failure");
+    await stopping;
+    await worker.runCycle();
+  });
   it("sweeps offline but only advances with a ready transport", async () => {
     let sweeps = 0,
       advances = 0,

@@ -28,8 +28,8 @@ export class BotWorker {
   async stop(): Promise<void> {
     this.stopped = true;
     this.sleepResolve?.();
-    await this.cyclePromise;
-    await this.loopPromise;
+    // A caller still receives a manual cycle failure; shutdown must finish draining it.
+    await Promise.allSettled([this.cyclePromise, this.loopPromise]);
   }
   runCycle(
     nowSeconds = this.options.clockSeconds?.() ?? Math.floor(Date.now() / 1000),
