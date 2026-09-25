@@ -189,11 +189,14 @@ export class WebContextSource implements ConversationContextSource {
     ];
     const memoryRefs = sources.filter((source) => source.kind === "memory");
     const memory = new Map(
-      memoryBodies(
-        o.orm,
-        o.runtime.agent_id,
-        o.sessionId,
-        memoryRefs.map((source) => source.id),
+      (memoryRefs.length
+        ? memoryBodies(
+            o.orm,
+            o.runtime.agent_id,
+            o.sessionId,
+            memoryRefs.map((source) => source.id),
+          )
+        : []
       ).map((item) => [item.id, item.revision]),
     );
     for (const source of sources) {
@@ -216,13 +219,31 @@ export class WebContextSource implements ConversationContextSource {
     if (!this.usage) return undefined;
     const usage = this.usage;
     const input_limit = usage.capacity - usage.output_reserved - usage.safety_reserved;
-    const protocol = context.units - (usage.input_units - usage.components.protocol);
+    const observationBase = this.engine.render(this.spec, {}, [], [], "stream").units;
+    let memoryUnits = 0,
+      knowledgeUnits = 0;
+    for (const observation of this.observations) {
+      const units =
+        this.engine.render(this.spec, {}, [observation], [], "stream").units - observationBase;
+      if (observation.name === "memory.query") memoryUnits += units;
+      else if (observation.name === "knowledge.query") knowledgeUnits += units;
+    }
+    const protocol =
+      context.units -
+      (usage.input_units - usage.components.protocol) -
+      memoryUnits -
+      knowledgeUnits;
     return {
       ...usage,
       input_units: context.units,
       input_limit,
       remaining: Math.max(0, input_limit - context.units),
-      components: { ...usage.components, protocol: Math.max(0, protocol) },
+      components: {
+        ...usage.components,
+        long_term_memory: usage.components.long_term_memory + memoryUnits,
+        knowledge: usage.components.knowledge + knowledgeUnits,
+        protocol: Math.max(0, protocol),
+      },
     };
   }
   private async query(

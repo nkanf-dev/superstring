@@ -202,6 +202,14 @@ describe("Web Agent and v2 streaming", () => {
       expect(persisted?.content).toBe("answer");
       expect(persisted?.id).toBe(output.outputId);
       expect(gateway.completeCalls).toHaveLength(2);
+      const usages = events.filter((event) => event.type === "context_usage");
+      expect(usages.at(-1)?.usage.components.long_term_memory).toBeGreaterThan(
+        usages[0]?.usage.components.long_term_memory ?? 0,
+      );
+      for (const event of usages)
+        expect(Object.values(event.usage.components).reduce((a, b) => a + b, 0)).toBe(
+          event.usage.input_units,
+        );
       expect(
         gateway.completeCalls[1]?.messages.some((m) => m.content.includes('"action_observation"')),
       ).toBe(true);
