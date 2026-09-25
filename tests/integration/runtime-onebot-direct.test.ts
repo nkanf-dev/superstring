@@ -111,7 +111,7 @@ it("production composition shares Web/Bot Agent runtime and dispatches private i
         recordedAt: now,
       })
       .run();
-    await runtime.qqRuntime.runCycle();
+    await runtime.botWorker.runCycle();
     expect(sends).toHaveLength(2);
     expect(business.db.query("SELECT status FROM outbound_intents").all()).toEqual([
       { status: "confirmed" },
@@ -126,7 +126,7 @@ it("production composition shares Web/Bot Agent runtime and dispatches private i
       { spec_id: "conversation.web", status: "completed" },
       { spec_id: "onebot.private.main", status: "completed" },
     ]);
-    await runtime.qqRuntime.runCycle();
+    await runtime.botWorker.runCycle();
     expect(sends).toHaveLength(2);
   } finally {
     await runtime.stop();

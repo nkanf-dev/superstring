@@ -28,6 +28,7 @@ export interface BotConversationPolicy {
   retentionDays: number;
   retryDelayMs: number;
   maxAttempts: number;
+  globalConcurrency: number;
 }
 
 export const DEFAULT_BOT_CONVERSATION_POLICY: BotConversationPolicy = {
@@ -36,6 +37,7 @@ export const DEFAULT_BOT_CONVERSATION_POLICY: BotConversationPolicy = {
   retentionDays: QQ_OBSERVATION_RETENTION_DAYS,
   retryDelayMs: 15_000,
   maxAttempts: 3,
+  globalConcurrency: 1,
 };
 
 /** Production composition of protocol ingress, Agent activation and durable delivery. */
@@ -161,6 +163,7 @@ export function createOneBotConversationRuntime(options: {
         renewMs: Math.max(1, Math.floor(leaseMs / 3)),
         retryDelayMs: policy.retryDelayMs,
         maxAttempts: policy.maxAttempts,
+        globalConcurrency: policy.globalConcurrency,
       };
     },
     async activate(wake, signal) {
