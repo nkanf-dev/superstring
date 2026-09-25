@@ -62,14 +62,18 @@ export class WakeScheduler {
       try {
         await this.options.activate(wake, controller.signal);
       } catch (error) {
+        const code = error instanceof Error && "code" in error ? error.code : undefined;
+        const errorCode =
+          typeof code === "string" && /^[A-Z][A-Z0-9_]+$/.test(code)
+            ? code
+            : error instanceof Error && /^[A-Z][A-Z0-9_]+$/.test(error.message)
+              ? error.message
+              : "BOT_RUN_FAILED";
         this.options.repository.fail(wake.id, wake.leaseToken!, {
           at: now(),
           maxAttempts: policy.maxAttempts,
           retryDelayMs: policy.retryDelayMs,
-          errorCode:
-            error instanceof Error && /^[A-Z][A-Z0-9_]+$/.test(error.message)
-              ? error.message
-              : "BOT_RUN_FAILED",
+          errorCode,
         });
         this.options.onError?.(error, wake);
       }

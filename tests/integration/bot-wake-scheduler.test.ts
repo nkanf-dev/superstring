@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openBusinessDb } from "../../src/server/db/schema-gate";
-import { ensureDefaults, DEFAULT_AGENT_ID } from "../../src/server/db/repositories";
+import { WakeScheduler } from "../../src/server/conversation/wake-scheduler";
 import { ConversationEventRepository } from "../../src/server/db/conversation-event-repository";
+import { DEFAULT_AGENT_ID, ensureDefaults } from "../../src/server/db/repositories";
+import { openBusinessDb } from "../../src/server/db/schema-gate";
 import { WakeRepository } from "../../src/server/db/wake-repository";
+
 const cleanups: (() => void)[] = [];
 afterEach(() => {
   for (const clean of cleanups.splice(0).reverse()) clean();
@@ -141,4 +143,36 @@ describe("durable cross-process Bot concurrency", () => {
     h.a.complete(lease.id, lease.leaseToken!, "no_output", 2, at);
     expect(h.a.peek({ at })?.cause).toBe("idle_topic");
   });
+});
+
+it("publishes stable error codes without exposing failure text", async () => {
+  const h = fixture();
+  const wake = offer(h, 0, "typed-error");
+  const scheduler = new WakeScheduler({
+    repository: h.a,
+    policy: () => ({ leaseMs: 1000, renewMs: 500, retryDelayMs: 100, maxAttempts: 1 }),
+    now: () => at,
+    activate: async () => {
+      throw Object.assign(new Error("private model response and local path"), {
+        code: "CONTEXT_MEMORY_BUDGET",
+      });
+    },
+  });
+  expect(await scheduler.runOnce()).toBe(true);
+  expect(h.a.get(wake.id)?.errorCode).toBe("CONTEXT_MEMORY_BUDGET");
+  scheduler.stop();
+  const next = offer(h, 1, "opaque-error");
+  const opaque = new WakeScheduler({
+    repository: h.a,
+    policy: () => ({ leaseMs: 1000, renewMs: 500, retryDelayMs: 100, maxAttempts: 1 }),
+    now: () => at,
+    activate: async () => {
+      throw Object.assign(new Error("private model response and local path"), {
+        code: "sensitive lowercase payload",
+      });
+    },
+  });
+  expect(await opaque.runOnce()).toBe(true);
+  expect(h.a.get(next.id)?.errorCode).toBe("BOT_RUN_FAILED");
+  opaque.stop();
 });
