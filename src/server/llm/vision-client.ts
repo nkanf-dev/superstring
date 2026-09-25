@@ -26,6 +26,9 @@ export interface VisionImage {
 }
 
 export interface VisionRequest {
+  readonly systemPrompt?: string;
+  readonly temperature?: number;
+  readonly maxTokens?: number;
   readonly model: string;
   readonly signal?: AbortSignal;
   readonly prompt: string;
@@ -88,8 +91,14 @@ export function createLmStudioVisionClient(
       const send = async (level: StructuredOutputLevel) => {
         const body: Record<string, unknown> = {
           model: request.model,
-          messages: [{ role: "user", content }],
-          temperature: 0.2,
+          messages: [
+            ...(request.systemPrompt === undefined
+              ? []
+              : [{ role: "system", content: request.systemPrompt }]),
+            { role: "user", content },
+          ],
+          temperature: request.temperature ?? 0.2,
+          ...(request.maxTokens === undefined ? {} : { max_tokens: request.maxTokens }),
         };
         if (request.responseSchema !== undefined && level !== "none") {
           body.response_format =

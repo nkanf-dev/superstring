@@ -11,6 +11,9 @@ export interface ModelRequest {
   signal?: AbortSignal;
 }
 export interface MultimodalRequest {
+  systemPrompt?: string;
+  temperature?: number;
+  maxTokens?: number;
   model: string;
   prompt: string;
   images: readonly VisionImage[];

@@ -169,6 +169,7 @@ export class AgentRuntime {
       this.repository.setStatus(active.runId, "generating", this.now());
       const source = input.sources?.[0];
       const messages: ModelMessage[] = [
+        ...(spec.instructions === undefined ? [] : [textMessage("system", spec.instructions)]),
         {
           role: "user",
           content: [
@@ -185,6 +186,9 @@ export class AgentRuntime {
       ];
       const value = await this.step(active, "vision", messages, input.sources ?? [], async () => {
         const raw = await this.options.model.completeMultimodal({
+          systemPrompt: spec.instructions,
+          temperature: spec.temperature,
+          maxTokens: spec.maxTokens,
           model: input.model,
           prompt: input.prompt,
           images: input.images,

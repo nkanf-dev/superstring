@@ -12,6 +12,7 @@ import type { ModelPort, ModelRequest } from "../../src/server/agent/model-port"
 import { AgentRunRepository } from "../../src/server/db/agent-run-repository";
 import { openBusinessDb } from "../../src/server/db/schema-gate";
 import type { ModelGateway } from "../../src/server/llm/model-gateway";
+import { createLmStudioVisionClient } from "../../src/server/llm/vision-client";
 import { estimateMessages } from "../../src/server/services/context-builder";
 import {
   type RunEvent,
@@ -188,6 +189,49 @@ describe("unified AgentRuntime", () => {
       "data:image",
     );
     expect(JSON.stringify(snapshot)).not.toContain('"bytes"');
+  });
+
+  it("honors explicit vision instructions and model options while leaving legacy defaults intact", async () => {
+    const { repository } = setup();
+    const requests: Record<string, unknown>[] = [];
+    const vision = createLmStudioVisionClient(
+      { baseUrl: "http://model/v1", model: "vision", timeoutSeconds: 30 },
+      (async (_url, init) => {
+        requests.push(JSON.parse(String(init?.body)));
+        return new Response(JSON.stringify({ choices: [{ message: { content: "description" } }] }));
+      }) as typeof fetch,
+    );
+    const runtime = createAgentRuntime({ repository, vision });
+    await runtime.completeVisionLeaf(
+      { id: "vision", instructions: "Describe colors.", temperature: 0.6, maxTokens: 123 },
+      {
+        owner,
+        model: "vision",
+        prompt: "Look",
+        images: [],
+      },
+    );
+    expect(requests[0]).toMatchObject({
+      temperature: 0.6,
+      max_tokens: 123,
+      messages: [
+        { role: "system", content: "Describe colors." },
+        { role: "user", content: [{ type: "text", text: "Look" }] },
+      ],
+    });
+    const run = repository.listRuns({ ownerKind: owner.kind, ownerId: owner.id })[0];
+    expect(repository.getContext(run.steps[0].context)?.messages?.[0]).toEqual(
+      textMessage("system", "Describe colors."),
+    );
+    await runtime.completeVisionLeaf(
+      { id: "legacy-vision" },
+      { owner, model: "vision", prompt: "Look", images: [] },
+    );
+    expect(requests[1].temperature).toBe(0.2);
+    expect(requests[1]).not.toHaveProperty("max_tokens");
+    expect(requests[1].messages).toEqual([
+      { role: "user", content: [{ type: "text", text: "Look" }] },
+    ]);
   });
 
   it("runs invoke-observe-final with trusted per-run actions, live deltas and atomic host commit", async () => {
