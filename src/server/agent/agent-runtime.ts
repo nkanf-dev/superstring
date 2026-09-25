@@ -51,6 +51,10 @@ export interface PreparedOutput extends OutputSummary {
   text?: string;
   stickerIds?: readonly string[];
 }
+export interface PreparedGeneration extends AgentGenerationConfig {
+  /** Explicit host-provided phase projection from the same authorized context source. */
+  context?: RenderedContext;
+}
 export interface ConversationInput {
   owner: RunOwner;
   context: ConversationContextSource;
@@ -71,11 +75,11 @@ export interface ConversationInput {
     draft: OutputDraft,
     ordinal: number,
   ) => Promise<{ outputId: string } | { blocked: true; code: string }>;
-  /** Trusted host configuration for this authorized output; cannot replace evidence or targets. */
+  /** Trusted host configuration and explicit phase view for this authorized output. */
   prepareGeneration?: (
     draft: Extract<OutputDraft, { kind: "generate" }>,
     input: { context: RenderedContext; outputId: string; signal: AbortSignal },
-  ) => Promise<AgentGenerationConfig | undefined>;
+  ) => Promise<PreparedGeneration | undefined>;
   /** Last observation checkpoint before a final/none decision becomes externally visible. */
   beforeFinal?: (drafts: readonly OutputDraft[], signal: AbortSignal) => Promise<boolean>;
   /** True re-observes; no_output suppresses a buffered plan that has no deliverable parts. */
@@ -365,21 +369,20 @@ export class AgentRuntime {
               continue;
             }
             this.checkStepBudget(active, spec);
-            const generation = {
-              ...spec.generation,
-              ...(await input.prepareGeneration?.(draft, {
-                context,
-                outputId,
-                signal: active.signal,
-              })),
-            };
+            const prepared = await input.prepareGeneration?.(draft, {
+              context,
+              outputId,
+              signal: active.signal,
+            });
+            const generation = { ...spec.generation, ...prepared };
+            const generationContext = prepared?.context ?? context;
             const messages = this.contextEngine.renderOutput(
               { ...spec, generation },
-              context,
+              generationContext,
               draft,
             );
             await input.onContext?.(
-              { ...context, messages, units: inputUnits(messages) },
+              { ...generationContext, messages, units: inputUnits(messages) },
               { runId: active.runId, phase: "generate" },
             );
             const generationSpec: LeafAgentSpec = {
@@ -394,7 +397,7 @@ export class AgentRuntime {
               active,
               "generate",
               messages,
-              context.sources,
+              generationContext.sources,
               async () => {
                 for await (const delta of this.options.model.streamText({
                   messages,

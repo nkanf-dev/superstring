@@ -687,6 +687,51 @@ describe("unified AgentRuntime", () => {
     expect(repository.getRun(result.runId)?.status).toBe("completed");
   });
 
+  it("persists the actual trusted generation phase view and charges its final envelope", async () => {
+    const source = { kind: "test_source", id: "reply-history", revision: "1" };
+    let generated: readonly import("../../src/shared/contracts/agent-run").ModelMessage[] = [];
+    const { runtime, repository } = setup({
+      async complete(request) {
+        expect(JSON.stringify(request.messages)).not.toContain("longer reply history");
+        return '{"kind":"final","outputs":[{"kind":"generate","targetId":"web","instructions":"answer"}]}';
+      },
+      async *streamText(request) {
+        generated = request.messages;
+        yield "answer";
+      },
+    });
+    const phase = {
+      messages: [
+        textMessage("system", "unused decision rule"),
+        textMessage("user", "longer reply history"),
+      ],
+      sources: [source],
+      units: 0,
+    };
+    const result = await runtime.run(spec, {
+      ...direct,
+      async prepareGeneration() {
+        return { context: phase, instructions: "trusted reply policy" };
+      },
+    });
+    const step = repository.getRun(result.runId)?.steps.find((step) => step.phase === "generate");
+    if (!step) throw new Error("Missing generation step");
+    expect(repository.getContext(step.context)).toMatchObject({
+      messages: generated,
+      sources: [source],
+    });
+    expect(generated.at(-1)).toEqual(textMessage("user", "longer reply history"));
+    expect(JSON.stringify(generated[0])).not.toContain("unused decision rule");
+    await expect(
+      runtime.run(spec, {
+        ...direct,
+        async prepareGeneration() {
+          return { context: phase, inputUnits: inputUnits(phase.messages) };
+        },
+      }),
+    ).rejects.toMatchObject({ code: "AGENT_CONTEXT_LIMIT" });
+  });
+
   it("lets a buffered channel prepare a sticker-only empty body while Web retains its empty-response contract", async () => {
     const { runtime } = setup({
       async complete() {
