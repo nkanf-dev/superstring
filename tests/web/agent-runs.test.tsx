@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InspectedContext, RunEvent, RunSnapshot } from "../../src/shared/contracts/agent-run";
 import { api } from "../../src/web/api";
 import { resolveModelUse } from "../../src/web/features/models/model-use";
-import { JobRunLink } from "../../src/web/features/runs/RunInspector";
+import { JobRunLink, runStatusLabel } from "../../src/web/features/runs/RunInspector";
 import { mergeRunSnapshot, reduceRunEvent } from "../../src/web/features/runs/run-state";
 import { selectLocale } from "../../src/web/i18n";
 import { useSuperstringStore as store } from "../../src/web/store";
@@ -208,6 +208,14 @@ describe("run inspector", () => {
     expect(inspect.mock.calls[0][1].aborted).toBe(true);
     await act(async () => finish(exact));
     expect(screen.queryByText("private source text")).toBeNull();
+  });
+});
+
+describe("run phase language", () => {
+  it("distinguishes maintenance and image tasks from conversation reply generation", () => {
+    expect(runStatusLabel("generating", "leaf")).toBe("正在处理");
+    expect(runStatusLabel("generating", "vision")).toBe("正在理解图片");
+    expect(runStatusLabel("generating", "generate")).toBe("正在回复");
   });
 });
 

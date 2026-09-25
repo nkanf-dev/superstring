@@ -21,6 +21,12 @@ const runLabels: Record<RunStatus, string> = {
   failed: "运行失败",
   cancelled: "运行已取消",
 };
+export function runStatusLabel(status: RunStatus, phase?: AgentStepSnapshot["phase"]): string {
+  if (status === "generating" && phase === "leaf") return "正在处理";
+  if (status === "generating" && phase === "vision") return "正在理解图片";
+  return runLabels[status];
+}
+
 const phaseLabels = {
   leaf: "单轮任务",
   next: "行动判断",
@@ -125,7 +131,13 @@ function OwnerRuns({ ownerKind, ownerId }: { ownerKind: string; ownerId: string 
             {ids.map((id) => (
               <option key={id} value={id}>
                 {localTime(runs[id]?.snapshot?.startedAt ?? "")} ·{" "}
-                {t(runLabels[runs[id]?.status ?? "prepared"])} · {id}
+                {t(
+                  runStatusLabel(
+                    runs[id]?.status ?? "prepared",
+                    runs[id]?.snapshot?.steps.at(-1)?.phase,
+                  ),
+                )}{" "}
+                · {id}
               </option>
             ))}
           </select>
@@ -165,7 +177,7 @@ export function RunDetails({ runId }: { runId: string }) {
       {run ? (
         <>
           <p className="run-status" data-status={view.status} role="status">
-            {t(runLabels[view.status])}
+            {t(runStatusLabel(view.status, run.steps.at(-1)?.phase))}
           </p>
           <dl className="run-metadata">
             <div>
@@ -321,7 +333,8 @@ export function ContextContent({ context }: { context: InspectedContext }) {
                 // biome-ignore lint/suspicious/noArrayIndexKey: Content parts keep their fixed position in the snapshot.
                 <pre key={`${index}:${part}`}>{content.text}</pre>
               ) : (
-                <dl key={content.sourceId} className="run-metadata">
+                // biome-ignore lint/suspicious/noArrayIndexKey: Multiple immutable image frames may share a source and hash.
+                <dl key={`${content.sourceId}:${content.sha256}:${part}`} className="run-metadata">
                   <div>
                     <dt>{t("图片来源")}</dt>
                     <dd>{content.sourceId}</dd>

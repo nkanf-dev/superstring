@@ -1,5 +1,6 @@
 // Chinese source keys are the default-locale catalog; English must cover every key.
 export const english = {
+  正在理解图片: "Understanding images",
   运行详情: "Run details",
   "查看本任务的模型运行、步骤与实际输入。":
     "Inspect this task’s model runs, steps and actual input.",
