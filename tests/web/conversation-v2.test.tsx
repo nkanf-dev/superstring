@@ -241,6 +241,7 @@ it("legacy completed replay is a persisted message, with no fabricated run", asy
 });
 
 it("an IME Enter does not submit, while an ordinary Enter does", async () => {
+  const originalSend = store.getState().send;
   const send = vi.fn(async () => {});
   store.setState({ send });
   render(<ChatPage />);
@@ -248,6 +249,7 @@ it("an IME Enter does not submit, while an ordinary Enter does", async () => {
   expect(send).not.toHaveBeenCalled();
   fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
   expect(send).toHaveBeenCalledOnce();
+  store.setState({ send: originalSend });
 });
 
 it("v2 SSE parses split UTF-8, CRLF, comments and multiline data through the strict schema", async () => {
@@ -283,4 +285,88 @@ it("v2 invalid event does not become a successful response", async () => {
   await expect(
     streamChatV2({ session_id: "a", message: "q", client_request_id: "r" }, vi.fn()),
   ).rejects.toThrow();
+});
+
+const pendingMessage: MessageResponse = {
+  ...message("reply", "partial"),
+  status: "pending",
+  completed_at: null,
+};
+const userMessage: MessageResponse = {
+  ...message("user", "persisted question"),
+  role: "user",
+  sequence_no: 1,
+};
+it("reload discovers a pending turn's active run and request without POST or browser prompt storage", async () => {
+  const stream = vi.fn(async () => {}),
+    listRuns = vi.fn(async () => ({ runs: [snapshot("generating")] }));
+  setup(
+    {
+      listMessages: async () => [userMessage, pendingMessage],
+      listRuns,
+      getRunEvents: async () => ({
+        events: [
+          { type: "started", runId: "run", seq: 1, at: now, requestId: "persisted-request" },
+        ],
+      }),
+    },
+    { streamChatV2: stream },
+  );
+  await store.getState().selectSession("a");
+  expect(listRuns).toHaveBeenCalledWith("web_turn", "turn");
+  expect(currentChat(store.getState())).toMatchObject({
+    phase: "reconciling",
+    runId: "run",
+    outputId: "reply",
+    request: { sessionId: "a", requestId: "persisted-request", text: "persisted question" },
+  });
+  store.getState().setComposer("new draft");
+  await store.getState().send();
+  expect(stream).not.toHaveBeenCalled();
+  await store.getState().reconcileChat();
+  expect(currentChat(store.getState()).phase).toBe("idle");
+  expect(stream).not.toHaveBeenCalled();
+});
+it("reload of a pending row with a terminal run reads the committed message", async () => {
+  const listMessages = vi
+    .fn()
+    .mockResolvedValueOnce([userMessage, pendingMessage])
+    .mockResolvedValueOnce([userMessage, message("reply", "committed")]);
+  setup({
+    listMessages,
+    listRuns: async () => ({ runs: [snapshot("completed")] }),
+    getRunEvents: async () => ({
+      events: [{ type: "started", runId: "run", seq: 1, at: now, requestId: "persisted-request" }],
+    }),
+  });
+  await store.getState().selectSession("a");
+  expect(currentChat(store.getState()).phase).toBe("idle");
+  expect(currentChat(store.getState()).messages.at(-1)?.content).toBe("committed");
+});
+it("legacy pending rows without run history remain readable without fabricated runs", async () => {
+  setup({
+    listMessages: async () => [userMessage, pendingMessage],
+    listRuns: async () => ({ runs: [] }),
+  });
+  await store.getState().selectSession("a");
+  expect(currentChat(store.getState()).phase).toBe("idle");
+  expect(currentChat(store.getState()).messages.at(-1)?.status).toBe("pending");
+  expect(store.getState().runById).toEqual({});
+});
+it("failed pending-run lookup stays unresolved and the check action retries only reads", async () => {
+  const listRuns = vi
+    .fn()
+    .mockRejectedValueOnce(Error("lookup unavailable"))
+    .mockResolvedValueOnce({ runs: [snapshot("completed")] });
+  setup({
+    listMessages: async () => [userMessage, pendingMessage],
+    listRuns,
+    getRunEvents: async () => ({ events: [] }),
+  });
+  await store.getState().selectSession("a");
+  expect(currentChat(store.getState()).phase).toBe("reconciling");
+  expect(currentChat(store.getState()).request).toBeNull();
+  await store.getState().reconcileChat();
+  expect(currentChat(store.getState()).phase).toBe("idle");
+  expect(listRuns).toHaveBeenCalledTimes(2);
 });

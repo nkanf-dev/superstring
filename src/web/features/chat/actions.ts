@@ -1,4 +1,4 @@
-import { UpdateSessionRequestSchema } from "../../../shared/contracts";
+import { type MessageResponse, UpdateSessionRequestSchema } from "../../../shared/contracts";
 import type { RunEvent } from "../../../shared/contracts/agent-run";
 import { ApiError } from "../../api";
 import { msg } from "../../i18n";
@@ -68,6 +68,49 @@ export function createChatActions(set: StoreSet, get: StoreGet): Actions {
     }));
     return summary.id;
   };
+  const recoverPendingTurn = async (id: string, messages: MessageResponse[]) => {
+    const pending = messages.findLast(
+      (item) => item.role === "assistant" && item.status === "pending",
+    );
+    if (!pending) return;
+    write(id, { phase: "reconciling" });
+    try {
+      const { runs } = await get().apiClient.listRuns("web_turn", pending.turn_id);
+      const run = runs.toSorted((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
+      if (!run) {
+        write(id, { phase: "idle" });
+        return;
+      }
+      get().receiveRunSnapshot(run);
+      write(id, { runId: run.runId, outputId: pending.id });
+      const { events } = await get().apiClient.getRunEvents(run.runId, 0);
+      const started = events.find((event) => event.type === "started");
+      const user = messages.find(
+        (item) => item.turn_id === pending.turn_id && item.role === "user",
+      );
+      if (started?.requestId && user)
+        write(id, {
+          request: {
+            sessionId: get().conversationById[id].sessionId,
+            text: user.content,
+            requestId: started.requestId,
+          },
+        });
+      if (["completed", "no_output", "failed", "cancelled"].includes(run.status)) {
+        await settleMessages(id);
+        const failed = run.status === "failed" || run.status === "cancelled";
+        write(id, (view) => ({
+          phase: failed ? "failed" : "idle",
+          failedChat: failed ? view.request : null,
+          knowledgeResend: run.errorCode === "KNOWLEDGE_ACCESS_CHANGED" ? view.request : null,
+          error: run.errorCode,
+          feedback: run.status === "no_output" ? msg("本次未发言") : "",
+        }));
+      } else write(id, { feedback: msg("服务端仍在处理，可稍后核对结果。") });
+    } catch (reason) {
+      write(id, { error: errorText(reason), feedback: msg("结果尚未确认，请核对结果后继续。") });
+    }
+  };
   const reload = async (id: string) => {
     const initial = get().conversationById[id];
     if (!initial) return;
@@ -78,6 +121,9 @@ export function createChatActions(set: StoreSet, get: StoreGet): Actions {
       get().apiClient.getSessionRuntime(initial.sessionId),
     ]);
     if (get().conversationById[id]?.loadRevision !== revision) return;
+    const recover =
+      !chatBusy(get().conversationById[id]) ||
+      (get().conversationById[id].phase === "reconciling" && !get().conversationById[id].request);
     write(id, (view) => ({
       ...(messages.status === "fulfilled" && !chatBusy(view)
         ? { messages: messages.value.map(toChatItem) }
@@ -90,6 +136,7 @@ export function createChatActions(set: StoreSet, get: StoreGet): Actions {
           ? { error: errorText(runtime.reason) }
           : {}),
     }));
+    if (messages.status === "fulfilled" && recover) await recoverPendingTurn(id, messages.value);
   };
   const settleMessages = async (id: string) => {
     const view = get().conversationById[id];
@@ -310,7 +357,10 @@ export function createChatActions(set: StoreSet, get: StoreGet): Actions {
   };
   return {
     reconcileChat: async (id = get().currentConversationId ?? undefined) => {
-      if (id) await reconcile(id);
+      if (id) {
+        if (get().conversationById[id]?.request) await reconcile(id);
+        else await reload(id);
+      }
     },
     selectSession: async (sessionId) => {
       set({
@@ -434,8 +484,17 @@ export function createChatActions(set: StoreSet, get: StoreGet): Actions {
       try {
         const id = await ensureConversation(sessionId);
         await reload(id);
-        set({ sessions: await get().apiClient.listSessions(), feedback: msg("会话已刷新") });
-        return !get().conversationById[id].error;
+        const error = get().conversationById[id].error;
+        if (error) {
+          set({ error });
+          return false;
+        }
+        set({
+          sessions: await get().apiClient.listSessions(),
+          feedback: msg("会话已刷新"),
+          error: null,
+        });
+        return true;
       } catch (reason) {
         set({ error: errorText(reason) });
         return false;
