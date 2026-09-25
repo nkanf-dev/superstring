@@ -11,6 +11,7 @@ export function projectConversationEvent(
   const base: ConversationEventView = {
     ...event,
     text: null,
+    messageStatus: null,
     contentState: "unavailable",
     media: [],
     deliveryStatus: null,
@@ -32,20 +33,18 @@ export function projectConversationEvent(
       cancel_requested: number;
       generation_token: string | null;
     } | null;
+    if (!m) return { ...base, contentState: "revoked" };
     if (
-      !m ||
-      ((!m.source_valid || !m.context_valid) &&
-        !(
-          m.role === "user" &&
-          m.generation_status === "active" &&
-          m.generation_token !== null &&
-          !m.cancel_requested
-        ))
+      m.status === "pending" ||
+      bodyRevision(`${m.status}\0${m.content}`) !== event.source.revision
     )
-      return { ...base, contentState: "revoked" };
-    if (m.status !== "completed" || bodyRevision(m.content) !== event.source.revision)
       return { ...base, contentState: "unavailable" };
-    return { ...base, text: m.content, contentState: "active" };
+    return {
+      ...base,
+      text: m.content,
+      contentState: "active",
+      messageStatus: m.status as "completed" | "failed" | "cancelled",
+    };
   }
   if (event.source.kind === "qq_event" || event.source.kind === "qq_observation") {
     const row = db

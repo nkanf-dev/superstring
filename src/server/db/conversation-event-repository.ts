@@ -343,28 +343,20 @@ export class ConversationEventRepository {
       generation_status: string;
       cancel_requested: number;
     } | null;
-    if (
-      !m ||
-      m.role === "system" ||
-      (!m.source_valid &&
-        !(
-          m.role === "user" &&
-          m.generation_status === "active" &&
-          m.generation_token !== null &&
-          !m.cancel_requested
-        )) ||
-      m.status !== "completed"
-    )
-      return null;
+    if (!m || m.role === "system" || m.status === "pending") return null;
     const conversation = this.ensureWeb(m.session_id);
     if (!conversation) return null;
     return this.append({
       conversationId: conversation.id,
-      eventKey: `web:${m.id}`,
+      eventKey: `web:${m.id}:${m.status}:${bodyRevision(m.content)}`,
       kind: m.role === "assistant" ? "outbound" : "inbound",
-      source: { kind: "web_message", id: m.id, revision: bodyRevision(m.content) },
+      source: {
+        kind: "web_message",
+        id: m.id,
+        revision: bodyRevision(`${m.status}\0${m.content}`),
+      },
       sources: [
-        { kind: "web_message", id: m.id, revision: bodyRevision(m.content) },
+        { kind: "web_message", id: m.id, revision: bodyRevision(`${m.status}\0${m.content}`) },
         { kind: "web_turn", id: m.turn_id, revision: m.generation_token ?? "completed" },
       ],
       participant: {
@@ -465,9 +457,7 @@ export class ConversationEventRepository {
       }[])
         this.ensureWeb(s.id);
       for (const m of this.db
-        .query(
-          "SELECT id FROM messages WHERE status='completed' ORDER BY created_at,sequence_no,id",
-        )
+        .query("SELECT id FROM messages WHERE status!='pending' ORDER BY created_at,sequence_no,id")
         .all() as { id: string }[])
         this.ingestWebMessage(m.id);
       for (const b of this.db

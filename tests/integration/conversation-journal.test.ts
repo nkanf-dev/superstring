@@ -10,6 +10,7 @@ import {
   ensureDefaults,
   prepareTurn,
   saveCompletedAssistantMessage,
+  saveFailedAssistantMessage,
 } from "../../src/server/db/repositories";
 import { openBusinessDb } from "../../src/server/db/schema-gate";
 import { projectConversationEvent } from "../../src/server/conversation/conversation-view";
@@ -59,6 +60,29 @@ function incoming(h: ReturnType<typeof setup>, id: string, time: number) {
     .run(id, `body ${id}`, time, later, at);
 }
 describe("canonical conversation source journal", () => {
+  it("retains failed partial transcript and journals a same-ID retry as a new source revision", () => {
+    const h = setup();
+    const p = prepareTurn(h.orm, h.session.id, "question", "retry");
+    saveFailedAssistantMessage(h.orm, h.session.id, "retry", "MODEL_ERROR", p.generationToken!, {
+      partialContent: "partial",
+    });
+    h.journal.backfill();
+    const c = h.journal.ensureWeb(h.session.id)!;
+    const before = h.journal.eventsAfter(c.id);
+    expect(before.items.map((e) => projectConversationEvent(h.db, e).text)).toEqual([
+      "question",
+      "partial",
+    ]);
+    expect(projectConversationEvent(h.db, before.items[1]!).messageStatus).toBe("failed");
+    const retry = prepareTurn(h.orm, h.session.id, "question", "retry");
+    saveCompletedAssistantMessage(h.orm, h.session.id, "full", "retry", retry.generationToken!);
+    const revised = h.journal.ingestWebMessage(retry.messageId)!;
+    expect(revised.source.id).toBe(before.items[1]!.source.id);
+    expect(revised.seq).toBeGreaterThan(before.nextSeq);
+    expect(projectConversationEvent(h.db, revised).text).toBe("full");
+    expect(projectConversationEvent(h.db, before.items[1]!).contentState).toBe("unavailable");
+  });
+
   it("journals a completed user message while its turn generation is still active", () => {
     const h = setup();
     const p = prepareTurn(h.orm, h.session.id, "accepted", "active");
@@ -103,9 +127,7 @@ describe("canonical conversation source journal", () => {
       "question",
       "answer",
     ]);
-    h.db
-      .query("UPDATE turns SET source_valid=0 WHERE id=(SELECT turn_id FROM messages WHERE id=?)")
-      .run(p.messageId);
+    h.db.query("DELETE FROM messages WHERE id=?").run(page.items[0]!.source.id);
     expect(projectConversationEvent(h.db, page.items[0]!).contentState).toBe("revoked");
     expect(
       ConversationListSchema.safeParse(h.journal.list({ userId: DEFAULT_USER_ID })).success,

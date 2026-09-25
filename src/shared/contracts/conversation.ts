@@ -43,6 +43,7 @@ export const ConversationEventSchema = z.strictObject({
 });
 export const ConversationEventViewSchema = ConversationEventSchema.extend({
   text: z.string().nullable(),
+  messageStatus: z.enum(["completed", "failed", "cancelled"]).nullable(),
   contentState: z.enum(["active", "expired", "revoked", "unavailable"]),
   media: z.array(
     z.strictObject({
