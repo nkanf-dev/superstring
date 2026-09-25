@@ -607,6 +607,86 @@ describe("unified AgentRuntime", () => {
     ).rejects.toMatchObject({ code: "AGENT_STEP_LIMIT" });
   });
 
+  it("prepares trusted target-specific generation without replacing shared context or leaking configuration between outputs", async () => {
+    const requests: ModelRequest[] = [];
+    const { runtime, repository } = setup({
+      async complete() {
+        return JSON.stringify({
+          kind: "final",
+          outputs: [
+            { kind: "generate", targetId: "alice", instructions: "answer Alice" },
+            { kind: "generate", targetId: "bob", instructions: "answer Bob" },
+          ],
+        });
+      },
+      async *streamText(request) {
+        requests.push(request);
+        yield "answer";
+      },
+    });
+    const result = await runtime.run(
+      { ...spec, generation: { temperature: 0.4, maxTokens: 512 } },
+      {
+        ...direct,
+        authorizedTargets: ["alice", "bob"],
+        outputMode: "buffered",
+        async prepareGeneration(draft, input) {
+          expect(input.context.messages.at(-1)).toEqual(textMessage("user", "hello"));
+          expect(input.outputId).toBeString();
+          return {
+            instructions: `Trusted host target ${draft.targetId}`,
+            model: `${draft.targetId}-reply`,
+            ...(draft.targetId === "alice" ? { temperature: 0.7, maxTokens: 256 } : {}),
+          };
+        },
+      },
+    );
+    expect(
+      requests.map((request) => [request.model, request.temperature, request.maxTokens]),
+    ).toEqual([
+      ["alice-reply", 0.7, 256],
+      ["bob-reply", 0.4, 512],
+    ]);
+    for (const [index, target] of ["alice", "bob"].entries()) {
+      expect(JSON.stringify(requests[index].messages[0])).toContain(
+        `Trusted host target ${target}`,
+      );
+      expect(requests[index].messages.at(-1)).toEqual(textMessage("user", "hello"));
+    }
+    expect(repository.getRun(result.runId)?.steps.map((step) => step.model)).toEqual([
+      "chat",
+      "alice-reply",
+      "bob-reply",
+    ]);
+  });
+
+  it("keeps other targets when one trusted generation preparation cannot fit its model", async () => {
+    const { runtime, repository } = setup({
+      async complete() {
+        return JSON.stringify({
+          kind: "final",
+          outputs: [
+            { kind: "generate", targetId: "alice", instructions: "answer" },
+            { kind: "generate", targetId: "bob", instructions: "answer" },
+          ],
+        });
+      },
+    });
+    const result = await runtime.run(spec, {
+      ...direct,
+      authorizedTargets: ["alice", "bob"],
+      outputMode: "buffered",
+      async prepareGeneration(draft) {
+        return { inputUnits: draft.targetId === "alice" ? 1 : 10000 };
+      },
+    });
+    expect(result.outputs).toMatchObject([
+      { targetId: "alice", status: "failed", code: "AGENT_CONTEXT_LIMIT" },
+      { targetId: "bob", status: "prepared", text: "answer" },
+    ]);
+    expect(repository.getRun(result.runId)?.status).toBe("completed");
+  });
+
   it("lets a buffered channel prepare a sticker-only empty body while Web retains its empty-response contract", async () => {
     const { runtime } = setup({
       async complete() {

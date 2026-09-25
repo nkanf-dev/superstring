@@ -17,6 +17,7 @@ import { unicodeStrip } from "../services/text";
 import {
   AGENT_DECISION_JSON_SCHEMA,
   AgentDecisionSchema,
+  type AgentGenerationConfig,
   type AgentSpec,
   type LeafAgentSpec,
   type OutputDraft,
@@ -70,6 +71,11 @@ export interface ConversationInput {
     draft: OutputDraft,
     ordinal: number,
   ) => Promise<{ outputId: string } | { blocked: true; code: string }>;
+  /** Trusted host configuration for this authorized output; cannot replace evidence or targets. */
+  prepareGeneration?: (
+    draft: Extract<OutputDraft, { kind: "generate" }>,
+    input: { context: RenderedContext; outputId: string; signal: AbortSignal },
+  ) => Promise<AgentGenerationConfig | undefined>;
   /** Last observation checkpoint before a final/none decision becomes externally visible. */
   beforeFinal?: (drafts: readonly OutputDraft[], signal: AbortSignal) => Promise<boolean>;
   /** True re-observes; no_output suppresses a buffered plan that has no deliverable parts. */
@@ -359,17 +365,29 @@ export class AgentRuntime {
               continue;
             }
             this.checkStepBudget(active, spec);
-            const messages = this.contextEngine.renderOutput(spec, context, draft);
+            const generation = {
+              ...spec.generation,
+              ...(await input.prepareGeneration?.(draft, {
+                context,
+                outputId,
+                signal: active.signal,
+              })),
+            };
+            const messages = this.contextEngine.renderOutput(
+              { ...spec, generation },
+              context,
+              draft,
+            );
             await input.onContext?.(
               { ...context, messages, units: inputUnits(messages) },
               { runId: active.runId, phase: "generate" },
             );
             const generationSpec: LeafAgentSpec = {
               ...spec,
-              model: spec.generation?.model ?? spec.model,
-              temperature: spec.generation?.temperature ?? spec.temperature,
-              maxTokens: spec.generation?.maxTokens ?? spec.maxTokens ?? spec.limits.outputTokens,
-              limits: { inputUnits: spec.generation?.inputUnits ?? spec.limits.inputUnits },
+              model: generation.model ?? spec.model,
+              temperature: generation.temperature ?? spec.temperature,
+              maxTokens: generation.maxTokens ?? spec.maxTokens ?? spec.limits.outputTokens,
+              limits: { inputUnits: generation.inputUnits ?? spec.limits.inputUnits },
             };
             let text = "";
             await this.step(
@@ -391,7 +409,7 @@ export class AgentRuntime {
                   if (input.outputMode === "stream")
                     await this.emit(active, { type: "output_delta", outputId, text: delta });
                 }
-                if (!unicodeStrip(text) && !spec.generation?.allowEmpty)
+                if (!unicodeStrip(text) && !generation.allowEmpty)
                   throw new AgentRuntimeError(
                     "MODEL_EMPTY_RESPONSE",
                     "Model returned an empty response",
