@@ -43,3 +43,28 @@ it("compact navigation stays open when a dirty destination is cancelled, closes 
   expect(store.getState().settingsView).toBe("general");
   expect(screen.queryByRole("dialog")).toBeNull();
 });
+
+it("compact conversation context menu stays keyboard reachable inside the navigation modal", async () => {
+  store.getState().rememberConversation({
+    id: "menu-conversation",
+    sourceId: "menu-session",
+    channel: "web",
+    topology: "direct",
+    title: "菜单会话",
+    agentId: "agent",
+    bindingEpoch: 1,
+    participants: [],
+    updatedAt: "2026-09-26T00:00:00Z",
+    lastSeq: 0,
+    consumedSeq: 0,
+  });
+  render(<ResponsiveSidebar version="test" />);
+  await userEvent.click(screen.getByRole("button", { name: "会话与导航" }));
+  const conversation = screen.getByRole("button", { name: "菜单会话" });
+  conversation.focus();
+  fireEvent.keyDown(conversation, { key: "F10", shiftKey: true });
+  const rename = screen.getByRole("menuitem", { name: "重命名" });
+  expect(document.activeElement).toBe(rename);
+  await userEvent.keyboard("{Enter}");
+  expect(screen.getByRole("textbox", { name: "会话名称" })).toBeTruthy();
+});

@@ -307,7 +307,9 @@ export function ConversationList() {
               {t("删除会话")}
             </button>
           </div>,
-          document.body,
+          // A compact directory lives in a Radix modal. Its existing menu must stay within
+          // that focus/pointer boundary; desktop keeps the original body portal.
+          triggerRef.current?.closest<HTMLElement>('[role="dialog"]') ?? document.body,
         )}
       {deleting && (
         <AlertDialog
