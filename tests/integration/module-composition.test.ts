@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { createAgentRuntime } from "../../src/server/agent/agent-runtime";
+import { ContextBuilder } from "../../src/server/agent/conversation-context";
 import { AgentRunRepository } from "../../src/server/db/agent-run-repository";
 import { KnowledgeRepository } from "../../src/server/db/knowledge-repository";
 import {
@@ -15,6 +16,7 @@ import type { ModelGateway } from "../../src/server/llm/model-gateway";
 import { createSqliteModules } from "../../src/server/modules/composition";
 import { turnSources } from "../../src/server/modules/provenance";
 import { normalizeOneBotMessage } from "../../src/server/services/onebot-protocol";
+import type { RuntimeConfig } from "../../src/shared/contracts";
 
 const handles: ReturnType<typeof openBusinessDb>[] = [];
 afterEach(() => {
@@ -36,7 +38,13 @@ function setup() {
   };
   const runs = new AgentRunRepository(h.db);
   const agentRuntime = createAgentRuntime({ gateway, repository: runs });
-  return { ...h, runs, modules: createSqliteModules({ ...h, gateway, agentRuntime }) };
+  return {
+    ...h,
+    gateway,
+    agentRuntime,
+    runs,
+    modules: createSqliteModules({ ...h, gateway, agentRuntime }),
+  };
 }
 describe("concrete module composition", () => {
   it("ingests a document idempotently and maintains it through the existing durable organizer", async () => {
@@ -118,6 +126,62 @@ describe("concrete module composition", () => {
     expect(h.modules.memory.observe(event).metadata.recorded).toBe(false);
     expect(h.db.query("SELECT event_key FROM qq_events").all()).toHaveLength(1);
   });
+  it("uses alternate memory and knowledge modules for the initial Web context without SQLite payload parsing", async () => {
+    const h = setup();
+    const session = createSession(h.orm, "custom modules", { modelName: "test-model" });
+    const request = crypto.randomUUID();
+    const prepared = prepareTurn(h.orm, session.id, "question", request);
+    const turn = getTurnByRequest(h.orm, session.id, request);
+    if (!turn || !prepared.generationToken) throw new Error("turn");
+    const runtime = JSON.parse(turn.runtimeConfigSnapshot) as RuntimeConfig;
+    runtime.p5_config.retrieval_mode = "full_body";
+    let valid = true;
+    const seen: string[] = [];
+    const builder = new ContextBuilder({
+      ...h,
+      modules: () => ({
+        memory: {
+          query: async (input) => {
+            seen.push(input.mode);
+            return [
+              {
+                id: "remote-memory",
+                text: "opaque memory material",
+                sources: [{ kind: "external", id: "memory", revision: "1" }],
+              },
+            ];
+          },
+        },
+        knowledge: {
+          query: async () => {
+            seen.push("knowledge");
+            return [
+              {
+                id: "remote-knowledge",
+                text: "opaque knowledge material",
+                sources: [{ kind: "external", id: "knowledge", revision: "1" }],
+              },
+            ];
+          },
+        },
+      }),
+      resolveSource: (source) =>
+        source.kind === "external" ? (valid ? "available" : "revoked") : undefined,
+    });
+    const result = await builder.build({
+      sessionId: session.id,
+      currentTurnId: turn.id,
+      generationToken: prepared.generationToken,
+      runtime,
+    });
+    expect(seen).toEqual(["full_body", "knowledge"]);
+    expect(JSON.stringify(result)).toContain("opaque memory material");
+    expect(JSON.stringify(result)).toContain("opaque knowledge material");
+    expect(h.db.query("SELECT turn_id FROM turn_knowledge_snapshots").all()).toHaveLength(0);
+    valid = false;
+    expect(() => builder.assertKnowledgeAccess(turn.id, DEFAULT_AGENT_ID)).toThrow();
+  });
+
   it("accepts only completed owned Web turns without duplicating their canonical source", () => {
     const h = setup();
     const session = createSession(h.orm, "chat", { modelName: "test-model" });

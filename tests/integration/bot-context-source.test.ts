@@ -263,6 +263,42 @@ describe("shared Bot context source", () => {
       }
     },
   );
+  it("uses the injected memory module for initial Bot evidence and later actions", async () => {
+    let reads = 0;
+    const h = setup({
+      mode: "full_body",
+      modules: () => ({
+        memory: {
+          query: async () => {
+            reads++;
+            return [
+              {
+                id: "custom",
+                text: "opaque external memory",
+                sources: [{ kind: "external", id: "memory", revision: "1" }],
+              },
+            ];
+          },
+        },
+        knowledge: { query: async () => [] },
+      }),
+      resolveSource: (source) => (source.kind === "external" ? "available" : undefined),
+    });
+    h.memory("SQLite memory should not be read");
+    h.seed("question");
+    const material = await h.source.read(readInput());
+    expect(JSON.stringify(material.pending)).toContain("opaque external memory");
+    // The raw conversation legitimately contains the seeded event, so inspect only the memory section.
+    expect(JSON.stringify(material.sources)).not.toContain('"kind":"memory"');
+    const action = h.source.actions.find((entry) => entry.description.name === "memory.query");
+    if (!action) throw new Error("missing action");
+    await action.execute(
+      { query: "follow up" },
+      { owner: { kind: "test", id: "test" }, signal: new AbortController().signal },
+    );
+    expect(reads).toBe(2);
+  });
+
   it("accepts a replaceable query backend with explicit source authority and rejects its later revocation", async () => {
     let valid = true,
       reads = 0;
