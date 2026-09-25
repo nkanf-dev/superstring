@@ -18,6 +18,7 @@ import type { ConversationState } from "../features/chat/conversation-state";
 import type { ConversationDirectoryState } from "../features/conversations/directory-state";
 import type { DesktopSettingsState } from "../features/general/desktop-state";
 import type { KnowledgeState, KnowledgeTarget } from "../features/knowledge/types";
+import type { QqDraftState } from "../features/qq/draft-state";
 import type {
   QqAccessState,
   QqSchemeState,
@@ -86,6 +87,7 @@ export interface SuperstringState
     QqSchemeState,
     QqStorageState,
     QqAccessState,
+    QqDraftState,
     DesktopSettingsState {
   pageEditor: import("../features/agents/page-drafts").PageEditor | null;
   settingsSaving: boolean;

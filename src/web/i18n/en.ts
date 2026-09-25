@@ -1,5 +1,11 @@
 // Chinese source keys are the default-locale catalog; English must cover every key.
 export const english = {
+  "访问令牌将被替换（不显示内容）": "Access token will be replaced (content hidden)",
+  "请先修正方案中的无效数字，再保存。": "Correct invalid scheme numbers before saving.",
+  "请填写重要人物名单，或关闭此模式。": "Enter the important people list, or turn this mode off.",
+  "接入设置有未保存修改，是否保存后继续？":
+    "Access settings have unsaved changes. Save before continuing?",
+  "{0} 项修改": "{0} changes",
   "OneBot 群聊": "OneBot group chats",
   "Web · 私聊": "Web · Direct",
   "OneBot · 私聊": "OneBot · Direct",

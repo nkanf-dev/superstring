@@ -1,3 +1,4 @@
+import { useQqInput } from "./use-qq-input";
 // QQ 聊天方案页 (§5.2's field groups, §11.2's shared draft; ADR0018 P5f).
 //
 // §11.1 puts this under 人设 → QQ额外配置 and fixes its sections: 方案选择、发言与节奏、上下文与记忆、
@@ -306,10 +307,10 @@ export function SchemeSettings() {
   const remove = useSuperstringStore((s) => s.deleteQqScheme);
   const discard = useSuperstringStore((s) => s.discardQqSchemeChanges);
   const openRoute = useSuperstringStore((s) => s.openSettingsRoute);
-  const [newName, setNewName] = useState("");
-  const [copyName, setCopyName] = useState("");
-  const [texts, setTexts] = useState<Record<string, string>>({});
-  const [invalid, setInvalid] = useState<Record<string, string>>({});
+  const [newName, setNewName] = useQqInput("schemeNewName");
+  const [copyName, setCopyName] = useQqInput("schemeCopyName");
+  const [texts, setTexts] = useQqInput("schemeTexts");
+  const [invalid, setInvalid] = useQqInput("schemeInvalid");
   const [showPreview, setShowPreview] = useState(true);
   const [pending, setPending] = useState<PendingAction | null>(null);
 

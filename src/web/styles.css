@@ -3749,3 +3749,22 @@ input[aria-invalid="true"] {
   font-size: 10px;
   color: var(--ac-muted);
 }
+
+.navigation-draft-preview {
+  max-height: 35dvh;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.navigation-draft-preview details + details {
+  margin-top: 0.75rem;
+}
+.conversation-channel {
+  display: block;
+  color: var(--ac-muted);
+  font-size: 0.75rem;
+}
+.conversation-directory-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}

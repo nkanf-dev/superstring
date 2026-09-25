@@ -5,7 +5,6 @@ import { SettingsWorkspace } from "./app/SettingsWorkspace";
 import { Sidebar as SidebarView } from "./app/Sidebar";
 import { StatusBar } from "./app/StatusBar";
 import { AgentSettings } from "./features/agents/AgentSettings";
-import { dirtyPages } from "./features/agents/page-drafts";
 import { AppearanceSettings } from "./features/appearance/AppearanceSettings";
 import { ChatPage } from "./features/chat/ChatPage";
 import { ConversationTimeline } from "./features/conversations/ConversationTimeline";
@@ -13,11 +12,7 @@ import { selectedConversation } from "./features/conversations/directory-state";
 import { GeneralSettings } from "./features/general/GeneralSettings";
 import { OperatingModeSettings } from "./features/general/OperatingModeSettings";
 import { KnowledgeSettings } from "./features/knowledge/KnowledgeSettings";
-import {
-  knowledgeModelDirty,
-  knowledgeReadDirty,
-  organizationDirty,
-} from "./features/knowledge/types";
+import { settingsHaveDrafts } from "./features/qq/draft-state";
 import { useI18n } from "./i18n";
 import { useSuperstringStore } from "./store";
 import { Icon } from "./ui/icons";
@@ -42,16 +37,7 @@ function App() {
   useEffect(() => {
     void bootstrap();
   }, [bootstrap]);
-  const unsaved = useSuperstringStore(
-    (state) =>
-      state.dirty ||
-      state.memoryCorrectionDirty ||
-      state.knowledgeDirty ||
-      dirtyPages(state.pageEditor).length > 0 ||
-      organizationDirty(state.organizationEditor) ||
-      knowledgeModelDirty(state.knowledgeModelEditor) ||
-      knowledgeReadDirty(state.knowledgeReadEditor),
-  );
+  const unsaved = useSuperstringStore(settingsHaveDrafts);
   useEffect(() => {
     if (!unsaved) return;
     const warn = (event: BeforeUnloadEvent) => {

@@ -17,6 +17,7 @@ import {
   createQqStickerActions,
   createQqStorageActions,
 } from "./features/qq/actions";
+import { createQqDraftActions, emptyQqInputs } from "./features/qq/draft-state";
 import { createRunActions } from "./features/runs/slice";
 import { createBootstrapActions } from "./state/bootstrap";
 import { defaultEffects } from "./state/effects";
@@ -56,6 +57,7 @@ export const useSuperstringStore = create<SuperstringState>()((set, get) => ({
   ...createQqSchemeActions(set, get),
   ...createQqStorageActions(set, get),
   ...createQqAccessActions(set, get),
+  ...createQqDraftActions(set, get),
   ...createDesktopSettingsActions(set, get),
   setNotice: (patch) => set(patch),
   clearMemoryDetail: () => {
@@ -66,6 +68,7 @@ export const useSuperstringStore = create<SuperstringState>()((set, get) => ({
   resetForTests: (client = api, effects = {}) =>
     set({
       ...initial,
+      qqInputs: emptyQqInputs(),
       apiClient: client,
       effects: { ...defaultEffects, ...effects },
     }),
