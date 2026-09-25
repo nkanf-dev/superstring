@@ -20,7 +20,7 @@ import { qqStickerSelectionForScheme } from "../../services/qq-sticker-candidate
 import { qqStickerUsable } from "../../services/qq-sticker-contract";
 import type { QqStickerStore } from "../../services/qq-sticker-store";
 import { OneBot11Adapter } from "./adapter";
-import { OneBotPrivateHost } from "./private-host";
+import { OneBotHost } from "./bot-host";
 
 export interface BotConversationPolicy {
   maxSteps: number;
@@ -58,7 +58,7 @@ export function createOneBotConversationRuntime(options: {
   const wakes = new WakeRepository(db);
   const outbox = new OutboundIntentRepository(db);
   const adapter = new OneBot11Adapter({ orm, journal, wakes, wake: options.wake });
-  const host = new OneBotPrivateHost({
+  const host = new OneBotHost({
     ...options,
     wakes,
     outbox,

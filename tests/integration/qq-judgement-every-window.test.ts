@@ -14,7 +14,7 @@ import { updateQqSettings } from "../../src/server/db/qq-settings-repository";
 import { ensureDefaults, nowIso, type Orm } from "../../src/server/db/repositories";
 import * as schema from "../../src/server/db/schema";
 import { openBusinessDb } from "../../src/server/db/schema-gate";
-import { runQqJudgement } from "../../src/server/services/qq-judgement-runner";
+import { runQqJudgement } from "../fixtures/legacy-qq/qq-judgement-runner";
 import { QQ_PROMPT_DEFAULTS } from "../../src/server/services/qq-prompt-contract";
 
 const agentId = "00000000-0000-0000-0000-000000000001";

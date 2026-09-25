@@ -119,12 +119,12 @@ it("production composition shares Web/Bot Agent runtime and dispatches private i
     expect(
       business.db
         .query(
-          "SELECT spec_id,status FROM agent_runs WHERE spec_id IN('conversation.web','onebot.private.main') ORDER BY rowid",
+          "SELECT spec_id,status FROM agent_runs WHERE spec_id IN('conversation.web','onebot.main') ORDER BY rowid",
         )
         .all(),
     ).toEqual([
       { spec_id: "conversation.web", status: "completed" },
-      { spec_id: "onebot.private.main", status: "completed" },
+      { spec_id: "onebot.main", status: "completed" },
     ]);
     await runtime.botWorker.runCycle();
     expect(sends).toHaveLength(2);

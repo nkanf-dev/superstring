@@ -16,7 +16,7 @@ import { updateQqSettings } from "../../src/server/db/qq-settings-repository";
 import { ensureDefaults, nowIso, type Orm } from "../../src/server/db/repositories";
 import * as schema from "../../src/server/db/schema";
 import { openBusinessDb } from "../../src/server/db/schema-gate";
-import { runQqInitiativeCycle } from "../../src/server/services/qq-initiative-cycle";
+import { runQqInitiativeCycle } from "../fixtures/legacy-qq/qq-initiative-cycle";
 import { QQ_PROMPT_DEFAULTS } from "../../src/server/services/qq-prompt-contract";
 import type { QqStickerStage } from "../../src/server/services/qq-sticker-runner";
 

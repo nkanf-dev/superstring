@@ -28,7 +28,7 @@ import {
 import {
   runQqDispatchCycle,
   runQqImmediateReplyCycle,
-} from "../../src/server/services/qq-dispatch-cycle";
+} from "../fixtures/legacy-qq/qq-dispatch-cycle";
 import type { QqSpeechKind } from "../../src/server/services/qq-speaking-contract";
 import type { QqStickerStage } from "../../src/server/services/qq-sticker-runner";
 import type { QqSpeechTriggers } from "../../src/shared/contracts/qq";

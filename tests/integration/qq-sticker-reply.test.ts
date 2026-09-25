@@ -28,7 +28,7 @@ import {
 import { ensureDefaults, nowIso, type Orm } from "../../src/server/db/repositories";
 import * as schema from "../../src/server/db/schema";
 import { openBusinessDb } from "../../src/server/db/schema-gate";
-import { runQqInitiativeCycle } from "../../src/server/services/qq-initiative-cycle";
+import { runQqInitiativeCycle } from "../fixtures/legacy-qq/qq-initiative-cycle";
 import type { QqOutputPlan } from "../../src/server/services/qq-output-plan";
 import { QQ_PROMPT_DEFAULTS } from "../../src/server/services/qq-prompt-contract";
 import { QQ_RHYTHM_DEFAULT } from "../../src/server/services/qq-rhythm-contract";

@@ -35,8 +35,8 @@ import { checkQqModelCapacity } from "./qq-capacity-preflight";
 import { ContextMessageSchema } from "./qq-context-contract";
 import type { QqSendPartResult } from "./qq-output-contract";
 import { planQqOutput, type QqOutputPlan } from "./qq-output-plan";
+import type { QqPreparedReply } from "./qq-prepared-reply";
 import { buildQqPrompt, qqPromptMessages } from "./qq-prompt-contract";
-import type { QqPendingReview } from "./qq-reply-runner";
 import { type QqStickerSelection, qqStickerSelectionForScheme } from "./qq-sticker-candidates";
 import { qqStickerChoice, qqStickerUsable } from "./qq-sticker-contract";
 import { compileSystemPrompt, runtimeFromAgent } from "./runtime-config";
@@ -271,7 +271,7 @@ function offeredStickers(selection: QqStickerSelection): readonly {
  */
 export function planQqPreparedReply(
   orm: Orm,
-  prepared: QqPendingReview,
+  prepared: QqPreparedReply,
   stage: QqStickerStage,
 ): QqOutputPlan {
   const pick = prepared.stickerId ?? null;

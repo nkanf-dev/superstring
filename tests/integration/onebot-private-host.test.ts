@@ -3,7 +3,7 @@ import { AgentRuntime } from "../../src/server/agent/agent-runtime";
 import { sourceAccess } from "../../src/server/agent/context-access";
 import type { ModelPort, ModelRequest } from "../../src/server/agent/model-port";
 import { OneBot11Adapter } from "../../src/server/channels/onebot11/adapter";
-import { OneBotPrivateHost } from "../../src/server/channels/onebot11/private-host";
+import { OneBotHost } from "../../src/server/channels/onebot11/bot-host";
 import { OutboundDelivery } from "../../src/server/conversation/outbound-delivery";
 import { WakeScheduler } from "../../src/server/conversation/wake-scheduler";
 import { AgentRunRepository } from "../../src/server/db/agent-run-repository";
@@ -98,7 +98,7 @@ function setup(model?: Partial<ModelPort>, options: { stickersAvailable?: boolea
     wakes,
     nowSeconds: () => clock.seconds,
   });
-  const host = new OneBotPrivateHost({
+  const host = new OneBotHost({
     orm: h.orm,
     journal,
     wakes,

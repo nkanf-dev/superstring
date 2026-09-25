@@ -1,27 +1,27 @@
-import { observationRelevant } from "../../conversation/observation-relevance";
 import type { Database } from "bun:sqlite";
 import type { ConversationEvent, WakeSignal } from "../../../shared/contracts/conversation";
 import type { SourceRef } from "../../../shared/contracts/evidence";
-import { AgentRuntime, type PreparedOutput } from "../../agent/agent-runtime";
+import type { AgentRuntime, PreparedOutput } from "../../agent/agent-runtime";
 import type { AgentSpec } from "../../agent/agent-specs";
 import { ConversationHost } from "../../agent/conversation-host";
+import { observationRelevant } from "../../conversation/observation-relevance";
 import { AgentRunRepository } from "../../db/agent-run-repository";
-import { ConversationEventRepository } from "../../db/conversation-event-repository";
-import { OutboundIntentRepository } from "../../db/outbound-intent-repository";
-import { WakeRepository } from "../../db/wake-repository";
+import type { ConversationEventRepository } from "../../db/conversation-event-repository";
+import type { OutboundIntentRepository } from "../../db/outbound-intent-repository";
 import { readQqBinding } from "../../db/qq-binding-repository";
 import { recordQqIdleJudgement } from "../../db/qq-dispatch-repository";
 import { readQqOwnerIdentity } from "../../db/qq-owner-repository";
 import {
-  readQqScheme,
   effectiveQqTriggers,
+  readQqScheme,
   schemePrompts,
   schemeReply,
   schemeRhythm,
 } from "../../db/qq-scheme-repository";
-import { newestMemberMessageSeconds } from "../../db/qq-speech-repository";
 import { readQqSettings } from "../../db/qq-settings-repository";
+import { newestMemberMessageSeconds } from "../../db/qq-speech-repository";
 import { DEFAULT_USER_ID, getAgentRow, type Orm } from "../../db/repositories";
+import type { WakeRepository } from "../../db/wake-repository";
 import type { ModelGateway } from "../../llm/model-gateway";
 import { captureQqTask, checkQqTask, qqConversationKey } from "../../services/qq-binding-contract";
 import {
@@ -29,13 +29,13 @@ import {
   QQ_IMMEDIATE_REPLY_FRESHNESS_SECONDS,
 } from "../../services/qq-dispatch";
 import { prepareQqJudgement } from "../../services/qq-judgement-preparation";
+import type { QqPreparedReply } from "../../services/qq-prepared-reply";
 import {
-  QQ_MEDIA_RULE,
   QQ_JUDGEMENT_RESPONSE_SCHEMA,
-  qqJudgeOutcome,
+  QQ_MEDIA_RULE,
   qqJudgeAllowsSpeech,
+  qqJudgeOutcome,
 } from "../../services/qq-prompt-contract";
-import type { QqPendingReview } from "../../services/qq-reply-runner";
 import { speechExpiresAt } from "../../services/qq-retention";
 import {
   checkQqSpeechSend,
@@ -44,9 +44,9 @@ import {
   type QqSpeechKind,
 } from "../../services/qq-speaking-contract";
 import {
-  selectQqSticker,
   planQqPreparedReply,
   type QqStickerStage,
+  selectQqSticker,
 } from "../../services/qq-sticker-runner";
 import { compileSystemPrompt, runtimeFromAgent } from "../../services/runtime-config";
 import { BotContextSource, type BotContextTarget } from "./context-source";
@@ -353,7 +353,7 @@ export class OneBotHost {
       source.invalidate();
       return true;
     };
-    const staged = new Map<string, QqPendingReview>();
+    const staged = new Map<string, QqPreparedReply>();
     const reserved = new Set<string>();
     return this.host.activate({
       conversation,
@@ -420,15 +420,14 @@ export class OneBotHost {
                 );
           if (pick.kind === "blocked") throw new Error(pick.reason);
           const target = targets.find((t) => t.id === output.targetId)!;
-          const pending: QqPendingReview = {
+          const pending: QqPreparedReply = {
             text: text || null,
             snapshot,
             schemeRevision: scheme.revision,
             agentConfigVersion: agent.configVersion,
             path,
             nowSeconds: seconds(),
-            memberEventCount: 0,
-            recomputesUsed: 0,
+
             selection,
             stickerId: pick.kind === "chosen" ? pick.stickerId : null,
             targetSpeakerId: target.speakerId,
