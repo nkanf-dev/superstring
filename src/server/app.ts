@@ -88,8 +88,8 @@ export function createApp(opts: CreateAppOptions): Hono {
     const journal = opts.conversationJournal ?? new ConversationEventRepository(business.db);
     const host = opts.conversationHost ?? new ConversationHost({ runtime: agentRuntime });
     app.route("/v2/runs", runRoutes(business.db, runRepository));
-    app.route("/v2/conversations", conversationRoutes(business.db));
-    app.route("/v2/deliveries", deliveryRoutes(business.db));
+    app.route("/v2/conversations", conversationRoutes(business.db, { includeShared: true }));
+    app.route("/v2/deliveries", deliveryRoutes(business.db, { includeShared: true }));
     app.route(
       "/",
       chatV2Routes({ orm: business.orm, db: business.db, gateway, agentRuntime, host, journal }),

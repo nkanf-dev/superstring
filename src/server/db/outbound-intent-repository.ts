@@ -1,11 +1,12 @@
-import { createHash } from "node:crypto";
-import type { SourceRef } from "../../shared/contracts/evidence";
 import type { Database } from "bun:sqlite";
+import { createHash } from "node:crypto";
 import type { Delivery, DeliveryPart } from "../../shared/contracts/conversation";
+import type { SourceRef } from "../../shared/contracts/evidence";
 export type OutboundTarget = {
   accountId: string;
   conversationKind: "private" | "group";
   peerId: string;
+  participantId?: string;
   agentId: string;
   bindingId: string;
   bindingEpoch: number;
@@ -68,8 +69,12 @@ export class OutboundIntentRepository {
   }
   get(id: string): Delivery | null {
     const r = this.row(id);
+    const target = r ? (JSON.parse(r.target) as OutboundTarget) : null;
     return r
       ? {
+          target: target
+            ? { peerId: target.peerId, participantId: target.participantId ?? null }
+            : null,
           id: r.id,
           runId: r.run_id,
           conversationId: r.conversation_id,

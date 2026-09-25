@@ -5,8 +5,8 @@ import type {
   ConversationEvent,
   ConversationSummary,
 } from "../../shared/contracts/conversation";
-import { DEFAULT_USER_ID } from "./repositories";
 import type { SourceRef } from "../../shared/contracts/evidence";
+import { DEFAULT_USER_ID } from "./repositories";
 
 type ConversationRow = {
   id: string;
@@ -164,6 +164,24 @@ export class ConversationEventRepository {
     const r = this.row(id);
     return r && (!userId || r.user_id === userId) ? this.summary(r) : null;
   }
+  /** Canonical directory includes sources that have never produced an Agent run. */
+  discover(userId: string): void {
+    this.db.transaction(() => {
+      const sessions = this.db
+        .query("SELECT id,updated_at FROM sessions WHERE user_id=?")
+        .all(userId) as { id: string; updated_at: string }[];
+      for (const session of sessions) {
+        const conversation = this.ensureWeb(session.id, userId)!;
+        this.db
+          .query("UPDATE conversations SET updated_at=MAX(updated_at,?) WHERE id=?")
+          .run(session.updated_at, conversation.id);
+      }
+      if (userId === DEFAULT_USER_ID) {
+        for (const binding of this.db.query("SELECT id FROM qq_bindings").all() as { id: string }[])
+          this.ensureOneBot(binding.id);
+      }
+    })();
+  }
   private summary(r: ConversationRow): ConversationSummary {
     const agent = this.db.query("SELECT name FROM agents WHERE id=?").get(r.agent_id) as {
       name: string;
@@ -194,7 +212,7 @@ export class ConversationEventRepository {
       title,
       participants: [
         { id: r.agent_id, label: agent?.name ?? r.agent_id, role: "agent" },
-        { id: peerId, label: peerId, role: r.topology === "shared" ? "member" : "user" },
+        ...(r.topology === "direct" ? [{ id: peerId, label: peerId, role: "user" as const }] : []),
       ],
       updatedAt: r.updated_at,
       lastSeq: r.next_seq - 1,
