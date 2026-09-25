@@ -165,8 +165,14 @@ const agentRunsSql = readFileSync(
   path.join(import.meta.dir, "../../migrations/versions/0039_agent_runs.sql"),
   "utf8",
 );
-const conversationWakesSql = readFileSync(path.join(import.meta.dir,"../../migrations/versions/0040_conversation_wakes.sql"),"utf8");
-const outboundIntentsSql = readFileSync(path.join(import.meta.dir,"../../migrations/versions/0041_outbound_intents.sql"),"utf8");
+const conversationWakesSql = readFileSync(
+  path.join(import.meta.dir, "../../migrations/versions/0040_conversation_wakes.sql"),
+  "utf8",
+);
+const outboundIntentsSql = readFileSync(
+  path.join(import.meta.dir, "../../migrations/versions/0041_outbound_intents.sql"),
+  "utf8",
+);
 const qqStickerAuthorizationSql = readFileSync(
   path.join(import.meta.dir, "../../migrations/versions/0022_qq_sticker_authorization.sql"),
   "utf8",

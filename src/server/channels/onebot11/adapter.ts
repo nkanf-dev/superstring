@@ -1,20 +1,20 @@
 import type { ConversationAddressing } from "../../../shared/contracts/conversation";
-import { ConversationEventRepository } from "../../db/conversation-event-repository";
-import { WakeRepository } from "../../db/wake-repository";
+import type { ConversationEventRepository } from "../../db/conversation-event-repository";
 import { readQqBinding, readQqBindings } from "../../db/qq-binding-repository";
 import { newestMemberEventFor } from "../../db/qq-observation-intake";
-import { readQqScheme, effectiveQqTriggers } from "../../db/qq-scheme-repository";
+import { effectiveQqTriggers, readQqScheme } from "../../db/qq-scheme-repository";
+import { platformMessageWasSentByAssistant, readQqSends } from "../../db/qq-send-repository";
 import { readQqSettings } from "../../db/qq-settings-repository";
-import { readQqSends, platformMessageWasSentByAssistant } from "../../db/qq-send-repository";
 import { lastQqSpeech } from "../../db/qq-speech-repository";
 import { getAgentRow, type Orm } from "../../db/repositories";
+import type { WakeRepository } from "../../db/wake-repository";
+import type { QqObservation } from "../../services/onebot-protocol";
 import {
   attentionTriggerFilter,
   QQ_IMMEDIATE_REPLY_FRESHNESS_SECONDS,
   sweepQqIdleTopics,
 } from "../../services/qq-dispatch";
 import type { ConversationIngress } from "../../services/qq-intake";
-import type { QqObservation } from "../../services/onebot-protocol";
 
 /** OneBot owns protocol addressing; QQ remains external to the application protocol. */
 export class OneBot11Adapter implements ConversationIngress {

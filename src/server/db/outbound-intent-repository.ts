@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
-import type { SourceRef } from "../../shared/contracts/evidence";
 import type { Database } from "bun:sqlite";
+import { createHash } from "node:crypto";
 import type { Delivery, DeliveryPart } from "../../shared/contracts/conversation";
+import type { SourceRef } from "../../shared/contracts/evidence";
 export type OutboundTarget = {
   accountId: string;
   conversationKind: "private" | "group";

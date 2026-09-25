@@ -1,13 +1,13 @@
 import type { Delivery } from "../../shared/contracts/conversation";
-import { ConversationEventRepository } from "../db/conversation-event-repository";
-import { OutboundIntentRepository, type OutboundTarget } from "../db/outbound-intent-repository";
+import type { ConversationEventRepository } from "../db/conversation-event-repository";
+import type { OutboundIntentRepository, OutboundTarget } from "../db/outbound-intent-repository";
 import { recordQqSend } from "../db/qq-send-repository";
 import type { Orm } from "../db/repositories";
 import type { OneBotSendResult } from "../services/onebot-connection";
 import {
-  qqTextSegments,
   type QqSendPort,
   type QqStickerFileReference,
+  qqTextSegments,
 } from "../services/qq-send-transport";
 
 /** Durable side effects. No model call can occur inside a transport transaction. */

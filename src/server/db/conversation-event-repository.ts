@@ -5,8 +5,8 @@ import type {
   ConversationEvent,
   ConversationSummary,
 } from "../../shared/contracts/conversation";
-import { DEFAULT_USER_ID } from "./repositories";
 import type { SourceRef } from "../../shared/contracts/evidence";
+import { DEFAULT_USER_ID } from "./repositories";
 
 type ConversationRow = {
   id: string;

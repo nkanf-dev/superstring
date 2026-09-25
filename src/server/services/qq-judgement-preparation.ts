@@ -1,7 +1,8 @@
 // Offline preparation for one explicitly classified QQ speech path (ADR0018 P3d).
 // Reads only an already bound conversation. It never calls a model, opens a socket or sends.
-import type { SourceRef } from "../../shared/contracts/evidence";
+
 import { z } from "zod";
+import type { SourceRef } from "../../shared/contracts/evidence";
 import { readQqBinding } from "../db/qq-binding-repository";
 import { attemptedUnreadMediaCount } from "../db/qq-media-repository";
 import { qqMemberLabels } from "../db/qq-member-repository";

@@ -1,6 +1,6 @@
 // Chinese source keys are the default-locale catalog; English must cover every key.
 export const english = {
-  "结果待确认": "Result unconfirmed",
+  结果待确认: "Result unconfirmed",
   "OneBot 私聊": "OneBot direct chats",
   "暂无 OneBot 私聊记录。": "No OneBot direct conversations yet.",
   "正在读取会话…": "Loading conversation\u2026",
