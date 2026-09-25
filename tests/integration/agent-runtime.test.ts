@@ -130,6 +130,27 @@ describe("unified AgentRuntime", () => {
     expect(repository.listEvents(run.runId).at(-1)?.type).toBe("failed");
   });
 
+  it("renders explicitly configured leaf instructions as trusted system input", async () => {
+    const { runtime } = setup({
+      async complete(request) {
+        expect(request.messages).toEqual([
+          textMessage("system", "Classify sentiment."),
+          textMessage("user", "Great"),
+        ]);
+        return "positive";
+      },
+    });
+    await expect(
+      runtime.completeLeaf(
+        { id: "one-line", instructions: "Classify sentiment." },
+        {
+          owner,
+          messages: [{ role: "user", content: "Great" }],
+        },
+      ),
+    ).resolves.toBe("positive");
+  });
+
   it("persists source/hash metadata for vision without persisting image bytes", async () => {
     const { h, repository } = setup();
     let callSignal: AbortSignal | undefined;

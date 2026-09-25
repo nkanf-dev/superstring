@@ -26,6 +26,7 @@ import {
   ContextEngine,
   type ConversationContextSource,
   inputUnits,
+  textMessage,
 } from "./context-engine";
 import { createModelPort, type ModelPort, type TextModelGateway, textMessages } from "./model-port";
 
@@ -135,7 +136,10 @@ export class AgentRuntime {
     try {
       await this.emit(active, { type: "started" });
       this.repository.setStatus(active.runId, "generating", this.now());
-      const messages = textMessages(input.messages);
+      const messages = [
+        ...(spec.instructions === undefined ? [] : [textMessage("system", spec.instructions)]),
+        ...textMessages(input.messages),
+      ];
       const value = await this.step(active, "leaf", messages, input.sources ?? [], async () => {
         const raw = await this.options.model.complete({
           messages,
