@@ -388,7 +388,7 @@ export class AgentRuntime {
                   if (input.outputMode === "stream")
                     await this.emit(active, { type: "output_delta", outputId, text: delta });
                 }
-                if (!unicodeStrip(text))
+                if (!unicodeStrip(text) && !spec.generation?.allowEmpty)
                   throw new AgentRuntimeError(
                     "MODEL_EMPTY_RESPONSE",
                     "Model returned an empty response",

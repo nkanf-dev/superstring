@@ -607,6 +607,34 @@ describe("unified AgentRuntime", () => {
     ).rejects.toMatchObject({ code: "AGENT_STEP_LIMIT" });
   });
 
+  it("lets a buffered channel prepare a sticker-only empty body while Web retains its empty-response contract", async () => {
+    const { runtime } = setup({
+      async complete() {
+        return '{"kind":"final","outputs":[{"kind":"generate","targetId":"web","instructions":""}]}';
+      },
+      async *streamText() {
+        yield "";
+      },
+    });
+    let stagedEmpty = false;
+    const result = await runtime.run(
+      { ...spec, generation: { allowEmpty: true } },
+      {
+        ...direct,
+        outputMode: "buffered",
+        reconsider: async (outputs) => {
+          expect(outputs).toHaveLength(1);
+          expect(outputs[0]).toMatchObject({ status: "prepared", text: "" });
+          stagedEmpty = true;
+          return false;
+        },
+      },
+    );
+    expect(stagedEmpty).toBe(true);
+    expect(result.status).toBe("completed");
+    await expect(runtime.run(spec, direct)).rejects.toMatchObject({ code: "MODEL_EMPTY_RESPONSE" });
+  });
+
   it("ModelPort preserves the gateway structured-output contract and default model", async () => {
     const { repository } = setup();
     let received: unknown;

@@ -24,6 +24,8 @@ export interface AgentSpec extends LeafAgentSpec {
   generation?: {
     /** Channel reply instructions may differ from decision/review instructions. */
     instructions?: string;
+    /** Some channels may complete an empty body with a non-text output, e.g. a sticker. */
+    allowEmpty?: boolean;
     model?: string;
     temperature?: number;
     maxTokens?: number;
