@@ -30,6 +30,7 @@ import {
   inputUnits,
   type RenderedContext,
   textMessage,
+  uniqueSources,
 } from "./context-engine";
 import { createModelPort, type ModelPort, type TextModelGateway, textMessages } from "./model-port";
 
@@ -312,7 +313,13 @@ export class AgentRuntime {
             signal: active.signal,
           });
           active.signal.throwIfAborted();
-          const observation = { ...result, id: randomUUID(), name: decision.name };
+          const observation = {
+            ...result,
+            id: randomUUID(),
+            name: decision.name,
+            arguments: decision.arguments,
+            sources: uniqueSources([...context.sources, ...result.sources]),
+          };
           observations.push(observation);
           await this.emit(active, {
             type: "action_result",

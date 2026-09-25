@@ -256,6 +256,7 @@ export class WebContextSource implements ConversationContextSource {
     const empty: ActionObservation = {
       id: "00000000-0000-0000-0000-000000000000",
       name,
+      arguments: input,
       value: [],
       sources: [],
     };

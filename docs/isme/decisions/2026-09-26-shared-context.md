@@ -41,3 +41,10 @@ A neutral BotWorker owns only timer/wake/stop, sweeps even offline, and waits fo
 - Change: SQLite query modules accept a host source-check callback and invoke it for parent plus candidate sources before/after child inference. BotContextSource supplies the same owner/scoped source validator used for main and generation views.
 - Effect: deleted input cannot be sent to a newly started selector merely because its candidate document is still authorized. Existing ownership, cursor and transaction behavior is unchanged.
 - Verification: delete the current question during the selector capacity probe for both memory and knowledge; assert no child model call or run is started.
+
+## Action input and causal provenance
+
+- Current: subsequent steps receive an action name and result, but omit the query arguments and may retain only the returned evidence's source references.
+- Change: typed observations carry the actual decision arguments as data and inherit the decision context's sources alongside result sources. Query budgeting includes the argument envelope. Durable event/decision metadata remains content-free; argument text lives only in source-bound context snapshots.
+- Effect: the Agent can distinguish repeated queries and revise its search; an observation cannot outlive the input from which its query was generated after context refresh.
+- Verification: remove the old question from the refreshed material, verify the next model sees the query and inherited source, then revoke the source and verify its later snapshot text is erased.

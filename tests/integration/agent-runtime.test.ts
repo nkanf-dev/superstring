@@ -314,6 +314,59 @@ describe("unified AgentRuntime", () => {
     );
   });
 
+  it("retains invoke arguments as data and inherits parent sources after a context refresh", async () => {
+    let step = 0;
+    const parent = { kind: "question", id: "old-question", revision: "1" };
+    const { runtime, repository } = setup({
+      async complete(request) {
+        if (++step === 1)
+          return JSON.stringify({
+            kind: "invoke",
+            name: "memory.query",
+            arguments: { query: "private query" },
+          });
+        const observation = request.messages.find(
+          (message) =>
+            message.role === "user" &&
+            message.content.some(
+              (part) => part.kind === "text" && part.text.includes("action_observation"),
+            ),
+        );
+        const part = observation?.content[0];
+        if (part?.kind !== "text") throw new Error("Missing observation");
+        expect(JSON.parse(part.text).value).toMatchObject({
+          arguments: { query: "private query" },
+          sources: [parent],
+        });
+        return '{"kind":"none"}';
+      },
+    });
+    const actions = createBuiltInActions({ memory: { query: async () => [] } });
+    const result = await runtime.run(
+      { ...spec, availableActions: actions.map((action) => action.description) },
+      {
+        ...direct,
+        actions,
+        outputMode: "buffered",
+        context: {
+          async read() {
+            return {
+              pending: [textMessage("user", step ? "newer question" : "original question")],
+              sources: step ? [] : [parent],
+            };
+          },
+        },
+      },
+    );
+    const snapshot = repository.getRun(result.runId);
+    const next = snapshot?.steps[1].context;
+    if (!next) throw new Error("Missing second step");
+    expect(repository.getContext(next)?.sources).toContainEqual(parent);
+    expect(JSON.stringify(repository.listEvents(result.runId))).not.toContain("private query");
+    repository.redactSource(parent.kind, parent.id, "revoked");
+    expect(repository.getContext(next)?.messages).toBeNull();
+  });
+
   it("commits an explicit none so a host can acknowledge a wake without creating an output", async () => {
     const { runtime, repository } = setup();
     let committed = false;
