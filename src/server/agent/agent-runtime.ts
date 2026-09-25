@@ -13,6 +13,7 @@ import { AgentRunRepository } from "../db/agent-run-repository";
 import { openBusinessDb } from "../db/schema-gate";
 import type { ChatMessage } from "../llm/model-gateway";
 import type { VisionClient, VisionImage } from "../llm/vision-client";
+import { unicodeStrip } from "../services/text";
 import {
   AGENT_DECISION_JSON_SCHEMA,
   AgentDecisionSchema,
@@ -73,6 +74,17 @@ export interface ConversationInput {
   beforeFinal?: (drafts: readonly OutputDraft[], signal: AbortSignal) => Promise<boolean>;
   /** Hosts check new relevant observations before committing. True returns to deciding. */
   reconsider?: (outputs: readonly PreparedOutput[], signal: AbortSignal) => Promise<boolean>;
+  /** Host transaction for partial text/error state and the same run terminal. */
+  commitFailure?: (
+    error: unknown,
+    runId: string,
+    terminal: {
+      status: "failed" | "cancelled";
+      event: RunEventPayload;
+      errorCode: string;
+      at: string;
+    },
+  ) => Promise<RunEvent | undefined>;
   /** Persists completed messages/intentions. Network delivery belongs to the host. */
   commitOutputs?: (
     outputs: readonly PreparedOutput[],
@@ -376,7 +388,7 @@ export class AgentRuntime {
                   if (input.outputMode === "stream")
                     await this.emit(active, { type: "output_delta", outputId, text: delta });
                 }
-                if (!text.trim())
+                if (!unicodeStrip(text))
                   throw new AgentRuntimeError(
                     "MODEL_EMPTY_RESPONSE",
                     "Model returned an empty response",
@@ -425,7 +437,7 @@ export class AgentRuntime {
         return { runId: active.runId, status: "completed", outputs };
       }
     } catch (error) {
-      await this.fail(active, error);
+      await this.fail(active, error, input.commitFailure);
       throw error;
     } finally {
       active.dispose();
@@ -562,18 +574,28 @@ export class AgentRuntime {
     if (committed) await active.onEvent?.(committed);
     else await this.finish(active, status, payload);
   }
-  private async fail(active: Running, error: unknown): Promise<void> {
+  private async fail(
+    active: Running,
+    error: unknown,
+    commit?: ConversationInput["commitFailure"],
+  ): Promise<void> {
     // Event consumers may disconnect after the terminal write. Do not mutate a completed run.
     if (this.repository.getRun(active.runId)?.endedAt) return;
     const cancelled = active.callerSignal?.aborted === true;
     const code = errorCode(active.signal.aborted ? active.signal.reason : error);
-    const event = this.repository.finishRun(
-      active.runId,
-      cancelled ? "cancelled" : "failed",
-      cancelled ? { type: "cancelled" } : { type: "failed", code },
-      this.now(),
-      { errorCode: code, conversationId: active.conversationId },
-    );
+    const terminal = {
+      status: cancelled ? ("cancelled" as const) : ("failed" as const),
+      event: cancelled ? { type: "cancelled" as const } : { type: "failed" as const, code },
+      at: this.now(),
+      errorCode: code,
+    };
+    const committed = await commit?.(error, active.runId, terminal);
+    const event =
+      committed ??
+      this.repository.finishRun(active.runId, terminal.status, terminal.event, terminal.at, {
+        errorCode: code,
+        conversationId: active.conversationId,
+      });
     try {
       await active.onEvent?.(event);
     } catch {

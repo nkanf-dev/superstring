@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
+import { createAgentRuntime } from "../../src/server/agent/agent-runtime";
 import { ContextBuilder } from "../../src/server/agent/conversation-context";
 import { chatV2Routes } from "../../src/server/api/chat-v2";
+import { DatabaseError } from "../../src/server/api/error-handler";
 import { parseSseFrames } from "../../src/server/api/sse";
 import { createApp } from "../../src/server/app";
 import { WebChannel } from "../../src/server/channels/web-channel";
@@ -59,6 +61,97 @@ async function collect(reply: AsyncGenerator<ChatV2Event>) {
 }
 
 describe("Web Agent and v2 streaming", () => {
+  for (const rollback of [false, true])
+    it(`commits failure partial, journal and terminal atomically (rollback=${rollback})`, async () => {
+      const { business, session, gateway } = setup();
+      try {
+        const repository = new AgentRunRepository(business.db);
+        const runtime = createAgentRuntime({ gateway, repository });
+        const finish = repository.finishRun.bind(repository);
+        let sawPartialInTerminalTransaction = false;
+        repository.finishRun = (...args) => {
+          if (args[1] !== "failed") return finish(...args);
+          sawPartialInTerminalTransaction =
+            listMessages(business.orm, session.id).find((message) => message.role === "assistant")
+              ?.content === "partial";
+          const event = finish(...args);
+          if (rollback) throw new DatabaseError("terminal transaction failed");
+          return event;
+        };
+        gateway.deltas = ["partial"];
+        gateway.fail = new Error("inference failed");
+        const channel = new WebChannel({
+          db: business.db,
+          orm: business.orm,
+          gateway,
+          agentRuntime: runtime,
+        });
+        const events: ChatV2Event[] = [];
+        await expect(
+          (async () => {
+            for await (const event of await channel.openReply({
+              sessionId: session.id,
+              message: "question",
+              clientRequestId: "failure",
+            }))
+              events.push(event);
+          })(),
+        ).rejects.toMatchObject({ code: rollback ? "DATABASE_UNAVAILABLE" : "MODEL_ERROR" });
+        expect(sawPartialInTerminalTransaction).toBe(true);
+        const runEvent = events.find((event) => event.type === "started");
+        if (runEvent?.type !== "started") throw Error("missing run");
+        const assistant = listMessages(business.orm, session.id).find(
+          (message) => message.role === "assistant",
+        );
+        expect(assistant?.status).toBe(rollback ? "pending" : "failed");
+        expect(assistant?.content).toBe(rollback ? "" : "partial");
+        expect(repository.getRun(runEvent.runId)?.status).toBe(rollback ? "generating" : "failed");
+        expect(repository.listEvents(runEvent.runId).some((event) => event.type === "failed")).toBe(
+          !rollback,
+        );
+        const journal = new ConversationEventRepository(business.db);
+        const conversation = journal.ensureWeb(session.id);
+        expect(conversation?.lastSeq).toBe(rollback ? 1 : 2);
+        expect(conversation?.consumedSeq).toBe(0);
+      } finally {
+        business.close();
+      }
+    });
+  it("preserves the existing whitespace contract through both runtime and channel", async () => {
+    const { business, session, gateway } = setup();
+    try {
+      const channel = new WebChannel({ db: business.db, orm: business.orm, gateway });
+      gateway.deltas = ["", "\uFEFF", ""];
+      const kept = await collect(
+        await channel.openReply({
+          sessionId: session.id,
+          message: "first",
+          clientRequestId: "bom",
+        }),
+      );
+      expect(kept.filter((event) => event.type === "output_delta")).toHaveLength(1);
+      expect(kept.at(-1)?.type).toBe("completed");
+      expect(
+        listMessages(business.orm, session.id).find((message) => message.role === "assistant")
+          ?.content,
+      ).toBe("\uFEFF");
+      gateway.decisions = [
+        { kind: "final", outputs: [{ kind: "generate", targetId: "reply", instructions: "" }] },
+      ];
+      gateway.deltas = ["\u0085"];
+      await expect(
+        collect(
+          await channel.openReply({
+            sessionId: session.id,
+            message: "second",
+            clientRequestId: "nel",
+          }),
+        ),
+      ).rejects.toMatchObject({ code: "MODEL_EMPTY_RESPONSE" });
+    } finally {
+      business.close();
+    }
+  });
   it("iterates read-observe-decide with initial context prepared once and stable output identity", async () => {
     const { business, session, gateway } = setup();
     try {

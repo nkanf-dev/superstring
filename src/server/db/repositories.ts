@@ -1151,7 +1151,9 @@ function saveAssistantMessage(
     orm
       .update(schema.messages)
       .set({
-        content,
+        // bun:sqlite string bindings discard a leading BOM; binding bytes preserves
+        // the exact Unicode contract for completed and partial model output.
+        content: sql`CAST(${Buffer.from(content, "utf8")} AS TEXT)`,
         status,
         errorCode,
         completedAt: status === MessageStatus.Completed ? now : null,

@@ -198,6 +198,7 @@ export class WebChannel {
     let committed = false,
       recorded = false;
     let failedEvent: RunEvent | undefined;
+    let mappedFailure: unknown;
     const bridge = new EventBridge();
     const disconnect = () => abort.abort(new DOMException("Client disconnected", "AbortError"));
     args.signal?.addEventListener("abort", disconnect, { once: true });
@@ -232,6 +233,33 @@ export class WebChannel {
       generationToken: args.generationToken,
       maxSteps: o.maxSteps ?? 16,
     });
+    const classify = (
+      error: unknown,
+    ): { error: unknown; code: string; persistPartial: boolean } => {
+      if (
+        error instanceof GenerationCancelledError ||
+        error instanceof GenerationOwnershipLostError
+      )
+        return { error, code: error.code, persistPartial: false };
+      if (ownership !== "active") {
+        const failure =
+          ownership === "cancelled"
+            ? new GenerationCancelledError()
+            : new GenerationOwnershipLostError();
+        return { error: failure, code: failure.code, persistPartial: false };
+      }
+      if (abort.signal.aborted) return { error, code: "CLIENT_DISCONNECTED", persistPartial: true };
+      if (error instanceof AgentRuntimeError && error.code === "MODEL_EMPTY_RESPONSE") {
+        const failure = new EmptyModelResponseError();
+        return { error: failure, code: failure.code, persistPartial: true };
+      }
+      if (isAppError(error)) return { error, code: error.code, persistPartial: true };
+      const failure =
+        error instanceof Error && error.name === "DatabaseError"
+          ? new DatabaseUnavailableError()
+          : new ModelUnavailableError("MODEL_ERROR", "本地模型调用失败");
+      return { error: failure, code: failure.code, persistPartial: true };
+    };
     const record = (code: string) => {
       if (recorded || committed) return;
       recorded = true;
@@ -244,6 +272,7 @@ export class WebChannel {
           args.generationToken,
           { partialContent: chunks.join("") },
         );
+        this.journal.ingestWebMessage(args.messageId);
       } catch {
         /* The lease winner retains its own result. */
       }
@@ -294,6 +323,46 @@ export class WebChannel {
             return false;
           },
           prepareOutput: async () => ({ outputId: args.messageId }),
+          commitFailure: async (error, runId, terminal) => {
+            const disposition = classify(error);
+            let hostFailure = disposition.error;
+            // An unsuccessful transaction remains visibly incomplete; never follow it with
+            // an independent message write that could split the two durable authorities.
+            recorded = true;
+            const committedFailure = immediate(this.db, () => {
+              let code = terminal.status === "cancelled" ? disposition.code : terminal.errorCode;
+              if (disposition.persistPartial) {
+                try {
+                  saveFailedAssistantMessage(
+                    o.orm,
+                    args.sessionId,
+                    args.clientRequestId,
+                    disposition.code,
+                    args.generationToken,
+                    { partialContent: chunks.join("") },
+                  );
+                  this.journal.ingestWebMessage(args.messageId);
+                } catch (failure) {
+                  if (
+                    !(failure instanceof GenerationCancelledError) &&
+                    !(failure instanceof GenerationOwnershipLostError)
+                  )
+                    throw failure;
+                  hostFailure = failure;
+                  code = failure.code;
+                }
+              }
+              return this.runtime.repository.finishRun(
+                runId,
+                terminal.status,
+                terminal.event.type === "failed" ? { ...terminal.event, code } : terminal.event,
+                terminal.at,
+                { errorCode: code, conversationId: args.conversation.id },
+              );
+            });
+            mappedFailure = hostFailure;
+            return committedFailure;
+          },
           commitOutputs: async (outputs, runId, terminal) => {
             assertOwnership();
             args.signal?.throwIfAborted();
@@ -336,33 +405,10 @@ export class WebChannel {
         });
         bridge.end();
       } catch (error) {
-        let failure: unknown = error;
-        if (
-          error instanceof GenerationCancelledError ||
-          error instanceof GenerationOwnershipLostError
-        )
-          recorded = true;
-        else if (ownership !== "active") {
-          recorded = true;
-          try {
-            assertOwnership();
-          } catch (e) {
-            failure = e;
-          }
-        } else if (abort.signal.aborted) {
-          record("CLIENT_DISCONNECTED");
-        } else if (error instanceof AgentRuntimeError && error.code === "MODEL_EMPTY_RESPONSE") {
-          failure = new EmptyModelResponseError();
-          record("MODEL_EMPTY_RESPONSE");
-        } else if (isAppError(error)) {
-          record(error.code);
-        } else if (error instanceof Error && error.name === "DatabaseError") {
-          failure = new DatabaseUnavailableError();
-          record("DATABASE_UNAVAILABLE");
-        } else {
-          failure = new ModelUnavailableError("MODEL_ERROR", "本地模型调用失败");
-          record("MODEL_ERROR");
-        }
+        const disposition = classify(mappedFailure ?? error);
+        if (disposition.persistPartial) record(disposition.code);
+        else recorded = true;
+        const failure = disposition.error;
         if (failedEvent) {
           try {
             await bridge.send(failedEvent);
