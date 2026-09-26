@@ -402,3 +402,9 @@ These review assets are separate from the application pull request. No preview s
 
 ![390px 窄屏 · 上传图片预览与保存动作（未上传服务端）](screenshots/avatar-narrow-upload.png)
 
+## 品牌升级
+
+### 品牌升级：旧新对比、16–64px、主题明暗与同母版生成的桌面图标帧
+
+![品牌升级：旧新对比、16–64px、主题明暗与同母版生成的桌面图标帧](screenshots/brand-refinement-board.png)
+

@@ -473,5 +473,10 @@
     "file": "avatar-narrow-upload.png",
     "caption": "390px 窄屏 · 上传图片预览与保存动作（未上传服务端）",
     "group": "对话头像"
+  },
+  {
+    "file": "brand-refinement-board.png",
+    "caption": "品牌升级：旧新对比、16–64px、主题明暗与同母版生成的桌面图标帧",
+    "group": "品牌升级"
   }
 ]
