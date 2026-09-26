@@ -16,7 +16,7 @@
   },
   {
     "file": "conversations-create-desktop.png",
-    "caption": "新建会话：明确选择下一段会话使用的助手，并设置可选名称；不会修改当前会话或助手编辑器。",
+    "caption": "新建会话：明确选择下一段会话使用的 Agent，并设置可选名称；不会修改当前会话或 Agent 编辑器。",
     "group": "对话与上下文"
   },
   {
@@ -211,33 +211,33 @@
   },
   {
     "file": "library-agent-directory.png",
-    "caption": "助手目录：创建、检索、批量选择与新会话默认助手",
-    "group": "助手工作室"
+    "caption": "Agent目录：创建、检索、批量选择与新会话默认Agent",
+    "group": "Agent工作室"
   },
   {
     "file": "library-agent-create.png",
-    "caption": "创建助手：名称、简介、模型与补充指令",
-    "group": "助手工作室"
+    "caption": "创建 Agent：名称、简介、模型与补充指令",
+    "group": "Agent工作室"
   },
   {
     "file": "library-agent-identity.png",
-    "caption": "助手工作室 · 身份与表达：五项人格与实际编译预览",
-    "group": "助手工作室"
+    "caption": "Agent工作室 · 身份与表达：五项人格与实际编译预览",
+    "group": "Agent工作室"
   },
   {
     "file": "library-agent-models-context.png",
-    "caption": "助手工作室 · 模型与上下文：四用途、容量与压缩预算",
-    "group": "助手工作室"
+    "caption": "Agent工作室 · 模型与上下文：四用途、容量与压缩预算",
+    "group": "Agent工作室"
   },
   {
     "file": "library-agent-resource-rules.png",
-    "caption": "助手工作室 · 资料规则：记忆维护与知识访问",
-    "group": "助手工作室"
+    "caption": "Agent工作室 · 资料规则：记忆维护与知识访问",
+    "group": "Agent工作室"
   },
   {
     "file": "library-agent-retrieval-detail.png",
-    "caption": "助手工作室 · 检索参数与目录提示词",
-    "group": "助手工作室"
+    "caption": "Agent工作室 · 检索参数与目录提示词",
+    "group": "Agent工作室"
   },
   {
     "file": "library-knowledge-directory.png",
@@ -261,7 +261,7 @@
   },
   {
     "file": "library-knowledge-grants.png",
-    "caption": "文档授权：明确授予或撤销助手访问",
+    "caption": "文档授权：明确授予或撤销Agent访问",
     "group": "知识库"
   },
   {
@@ -397,6 +397,81 @@
   {
     "file": "library-narrow-agent-models-english.png",
     "caption": "390px 窄屏 · English models and context（浏览器只读契约演示数据）（只读浏览器合成响应）",
-    "group": "助手工作室"
+    "group": "Agent工作室"
+  },
+  {
+    "file": "avatar-web-conversation.png",
+    "caption": "Web 会话：目录与表头使用稳定且不同的头像",
+    "group": "对话头像"
+  },
+  {
+    "file": "avatar-gallery-shapes.png",
+    "caption": "头像图库 · 几何拼色（DiceBear 本地生成，未保存）",
+    "group": "对话头像"
+  },
+  {
+    "file": "avatar-gallery-rings.png",
+    "caption": "头像图库 · 彩色圆环（DiceBear 本地生成，未保存）",
+    "group": "对话头像"
+  },
+  {
+    "file": "avatar-gallery-pixel-art.png",
+    "caption": "头像图库 · 像素角色（DiceBear 本地生成，未保存）",
+    "group": "对话头像"
+  },
+  {
+    "file": "avatar-gallery-lorelei.png",
+    "caption": "头像图库 · 轻描肖像（DiceBear 本地生成，未保存）",
+    "group": "对话头像"
+  },
+  {
+    "file": "avatar-gallery-notionists.png",
+    "caption": "头像图库 · 线描人物（DiceBear 本地生成，未保存）",
+    "group": "对话头像"
+  },
+  {
+    "file": "avatar-gallery-thumbs.png",
+    "caption": "头像图库 · 趣味面孔（DiceBear 本地生成，未保存）",
+    "group": "对话头像"
+  },
+  {
+    "file": "avatar-shuffle.png",
+    "caption": "换一组官方图案：替换候选，不提前改写已保存头像",
+    "group": "对话头像"
+  },
+  {
+    "file": "avatar-upload-empty.png",
+    "caption": "上传头像：原生图片选择与格式说明",
+    "group": "对话头像"
+  },
+  {
+    "file": "avatar-upload-preview.png",
+    "caption": "上传预览：官方生成图案的 PNG 截图，仅本地预览，未保存",
+    "group": "对话头像"
+  },
+  {
+    "file": "avatar-conversation-details.png",
+    "caption": "会话详情中的更换头像入口",
+    "group": "对话头像"
+  },
+  {
+    "file": "avatar-onebot-conversation.png",
+    "caption": "OneBot 群聊：独立会话头像与既有历史",
+    "group": "对话头像"
+  },
+  {
+    "file": "avatar-onebot-editor.png",
+    "caption": "OneBot 群聊头像编辑，复用同一图库与保存边界",
+    "group": "对话头像"
+  },
+  {
+    "file": "avatar-narrow-gallery.png",
+    "caption": "390px 窄屏 · 群聊头像图库与单选",
+    "group": "对话头像"
+  },
+  {
+    "file": "avatar-narrow-upload.png",
+    "caption": "390px 窄屏 · 上传图片预览与保存动作（未上传服务端）",
+    "group": "对话头像"
   }
 ]

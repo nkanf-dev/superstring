@@ -18,9 +18,9 @@ These review assets are separate from the application pull request. No preview s
 
 ![会话身份检查：只读展示会话/来源标识、Agent 绑定版本和参与者，避免把配置编辑身份与当前会话身份混用。](screenshots/conversations-identity-desktop.png)
 
-### 新建会话：明确选择下一段会话使用的助手，并设置可选名称；不会修改当前会话或助手编辑器。
+### 新建会话：明确选择下一段会话使用的 Agent，并设置可选名称；不会修改当前会话或 Agent 编辑器。
 
-![新建会话：明确选择下一段会话使用的助手，并设置可选名称；不会修改当前会话或助手编辑器。](screenshots/conversations-create-desktop.png)
+![新建会话：明确选择下一段会话使用的 Agent，并设置可选名称；不会修改当前会话或 Agent 编辑器。](screenshots/conversations-create-desktop.png)
 
 ### 全局命令面板：产品空间、功能入口与已加载会话分组，支持键盘查找和已有草稿导航守卫。
 
@@ -178,31 +178,31 @@ These review assets are separate from the application pull request. No preview s
 
 ![窄屏模型证据：展开阅读后独立显示调用身份与实际输出，正文不塞入嵌套弹窗。390px，合成数据。](screenshots/runs-15-evidence-mobile.png)
 
-## 助手工作室
+## Agent工作室
 
-### 助手目录：创建、检索、批量选择与新会话默认助手
+### Agent目录：创建、检索、批量选择与新会话默认Agent
 
-![助手目录：创建、检索、批量选择与新会话默认助手](screenshots/library-agent-directory.png)
+![Agent目录：创建、检索、批量选择与新会话默认Agent](screenshots/library-agent-directory.png)
 
-### 创建助手：名称、简介、模型与补充指令
+### 创建 Agent：名称、简介、模型与补充指令
 
-![创建助手：名称、简介、模型与补充指令](screenshots/library-agent-create.png)
+![创建 Agent：名称、简介、模型与补充指令](screenshots/library-agent-create.png)
 
-### 助手工作室 · 身份与表达：五项人格与实际编译预览
+### Agent工作室 · 身份与表达：五项人格与实际编译预览
 
-![助手工作室 · 身份与表达：五项人格与实际编译预览](screenshots/library-agent-identity.png)
+![Agent工作室 · 身份与表达：五项人格与实际编译预览](screenshots/library-agent-identity.png)
 
-### 助手工作室 · 模型与上下文：四用途、容量与压缩预算
+### Agent工作室 · 模型与上下文：四用途、容量与压缩预算
 
-![助手工作室 · 模型与上下文：四用途、容量与压缩预算](screenshots/library-agent-models-context.png)
+![Agent工作室 · 模型与上下文：四用途、容量与压缩预算](screenshots/library-agent-models-context.png)
 
-### 助手工作室 · 资料规则：记忆维护与知识访问
+### Agent工作室 · 资料规则：记忆维护与知识访问
 
-![助手工作室 · 资料规则：记忆维护与知识访问](screenshots/library-agent-resource-rules.png)
+![Agent工作室 · 资料规则：记忆维护与知识访问](screenshots/library-agent-resource-rules.png)
 
-### 助手工作室 · 检索参数与目录提示词
+### Agent工作室 · 检索参数与目录提示词
 
-![助手工作室 · 检索参数与目录提示词](screenshots/library-agent-retrieval-detail.png)
+![Agent工作室 · 检索参数与目录提示词](screenshots/library-agent-retrieval-detail.png)
 
 ### 390px 窄屏 · English models and context（浏览器只读契约演示数据）（只读浏览器合成响应）
 
@@ -226,9 +226,9 @@ These review assets are separate from the application pull request. No preview s
 
 ![文档工作台 · 来源证据](screenshots/library-knowledge-sources.png)
 
-### 文档授权：明确授予或撤销助手访问
+### 文档授权：明确授予或撤销Agent访问
 
-![文档授权：明确授予或撤销助手访问](screenshots/library-knowledge-grants.png)
+![文档授权：明确授予或撤销Agent访问](screenshots/library-knowledge-grants.png)
 
 ### 知识整理设置：自动整理、全局读取预算与模型入口
 
@@ -339,4 +339,66 @@ These review assets are separate from the application pull request. No preview s
 ### 390px 窄屏 · English Preferences（浏览器只读契约演示数据）（只读浏览器合成响应）
 
 ![390px 窄屏 · English Preferences（浏览器只读契约演示数据）（只读浏览器合成响应）](screenshots/library-narrow-preferences-english.png)
+
+## 对话头像
+
+### Web 会话：目录与表头使用稳定且不同的头像
+
+![Web 会话：目录与表头使用稳定且不同的头像](screenshots/avatar-web-conversation.png)
+
+### 头像图库 · 几何拼色（DiceBear 本地生成，未保存）
+
+![头像图库 · 几何拼色（DiceBear 本地生成，未保存）](screenshots/avatar-gallery-shapes.png)
+
+### 头像图库 · 彩色圆环（DiceBear 本地生成，未保存）
+
+![头像图库 · 彩色圆环（DiceBear 本地生成，未保存）](screenshots/avatar-gallery-rings.png)
+
+### 头像图库 · 像素角色（DiceBear 本地生成，未保存）
+
+![头像图库 · 像素角色（DiceBear 本地生成，未保存）](screenshots/avatar-gallery-pixel-art.png)
+
+### 头像图库 · 轻描肖像（DiceBear 本地生成，未保存）
+
+![头像图库 · 轻描肖像（DiceBear 本地生成，未保存）](screenshots/avatar-gallery-lorelei.png)
+
+### 头像图库 · 线描人物（DiceBear 本地生成，未保存）
+
+![头像图库 · 线描人物（DiceBear 本地生成，未保存）](screenshots/avatar-gallery-notionists.png)
+
+### 头像图库 · 趣味面孔（DiceBear 本地生成，未保存）
+
+![头像图库 · 趣味面孔（DiceBear 本地生成，未保存）](screenshots/avatar-gallery-thumbs.png)
+
+### 换一组官方图案：替换候选，不提前改写已保存头像
+
+![换一组官方图案：替换候选，不提前改写已保存头像](screenshots/avatar-shuffle.png)
+
+### 上传头像：原生图片选择与格式说明
+
+![上传头像：原生图片选择与格式说明](screenshots/avatar-upload-empty.png)
+
+### 上传预览：官方生成图案的 PNG 截图，仅本地预览，未保存
+
+![上传预览：官方生成图案的 PNG 截图，仅本地预览，未保存](screenshots/avatar-upload-preview.png)
+
+### 会话详情中的更换头像入口
+
+![会话详情中的更换头像入口](screenshots/avatar-conversation-details.png)
+
+### OneBot 群聊：独立会话头像与既有历史
+
+![OneBot 群聊：独立会话头像与既有历史](screenshots/avatar-onebot-conversation.png)
+
+### OneBot 群聊头像编辑，复用同一图库与保存边界
+
+![OneBot 群聊头像编辑，复用同一图库与保存边界](screenshots/avatar-onebot-editor.png)
+
+### 390px 窄屏 · 群聊头像图库与单选
+
+![390px 窄屏 · 群聊头像图库与单选](screenshots/avatar-narrow-gallery.png)
+
+### 390px 窄屏 · 上传图片预览与保存动作（未上传服务端）
+
+![390px 窄屏 · 上传图片预览与保存动作（未上传服务端）](screenshots/avatar-narrow-upload.png)
 
